@@ -1,0 +1,343 @@
+/* Stripchat Tracker Dashboard — minimalist dark theme */
+
+Screen {
+    background: #0b0f14;
+    color: #e6edf3;
+}
+
+/* ---------- Top bar ---------- */
+#topbar {
+    height: 3;
+    background: #10161d;
+    border-bottom: solid #1c2530;
+    padding: 0 2;
+}
+
+#title {
+    color: #a78bfa;
+    text-style: bold;
+    content-align: left middle;
+    width: 1fr;
+    height: 3;
+}
+
+#sheet-badge {
+    color: #7d8590;
+    content-align: right middle;
+    height: 3;
+    width: auto;
+}
+
+#status-pill {
+    width: auto;
+    height: 3;
+    content-align: right middle;
+    text-style: bold;
+    margin-right: 2;
+}
+
+.status-idle { color: #7d8590; }
+.status-live { color: #22d873; }
+.status-busy { color: #f5c451; }
+
+/* ---------- Stat cards ---------- */
+#stats-row {
+    height: 6;
+    padding: 1 2;
+}
+
+.stat-card {
+    width: 1fr;
+    height: 4;
+    background: #10161d;
+    border: round #1c2530;
+    margin-right: 1;
+    content-align: center middle;
+}
+
+.stat-card:last-of-type {
+    margin-right: 0;
+}
+
+.stat-label {
+    color: #7d8590;
+    text-style: none;
+}
+
+.stat-value {
+    color: #e6edf3;
+    text-style: bold;
+}
+
+/* ---------- Controls ---------- */
+#controls {
+    height: 3;
+    padding: 0 2 1 2;
+}
+
+#controls Button {
+    margin-right: 1;
+    min-width: 14;
+}
+
+Button#start-btn {
+    background: #1f6f4a;
+    color: #eafff3;
+}
+Button#start-btn:hover {
+    background: #23895b;
+}
+Button#start-btn:disabled {
+    background: #182b22;
+    color: #6b8078;
+    border: round #24382e;
+}
+
+Button#stop-btn {
+    background: #7a2733;
+    color: #ffecec;
+}
+Button#stop-btn:hover {
+    background: #94303f;
+}
+Button#stop-btn:disabled {
+    background: #2e191d;
+    color: #8a6b6e;
+    border: round #402328;
+}
+
+Button#switch-btn, Button#quit-btn, Button#lang-btn {
+    background: #182028;
+    color: #c9d1d9;
+    border: round #263140;
+}
+Button#switch-btn:hover, Button#quit-btn:hover, Button#lang-btn:hover {
+    background: #212b36;
+}
+Button#switch-btn:disabled {
+    background: #171d24;
+    color: #6d7986;
+    border: round #232d38;
+}
+
+/* ---------- Main content (table + globe) ---------- */
+#main-area {
+    height: 1fr;
+    padding: 0 2;
+}
+
+#table-wrap {
+    width: 1fr;
+    padding: 0 1 0 0;
+}
+
+DataTable {
+    background: #0e141b;
+    border: round #1c2530;
+    height: 1fr;
+}
+
+/* ---------- Globe panel ---------- */
+#globe-panel {
+    width: 56;
+    min-width: 56;
+    height: 1fr;
+    background: #0a0f1c;
+    border: round #24406b;
+    padding: 1 2;
+}
+
+#globe-header {
+    height: 3;
+    margin-bottom: 1;
+}
+
+#globe-title {
+    color: #5fb4ff;
+    text-style: bold;
+    content-align: left middle;
+    width: 1fr;
+    height: 3;
+}
+
+#globe-map {
+    height: auto;
+    content-align: center middle;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#globe-info {
+    height: auto;
+    text-align: center;
+    border-top: solid #1c2c45;
+    padding-top: 1;
+    color: #e6edf3;
+}
+
+DataTable > .datatable--header {
+    background: #141c25;
+    color: #a78bfa;
+    text-style: bold;
+}
+
+DataTable > .datatable--cursor {
+    background: #22303f;
+}
+
+/* ---------- Activity log ---------- */
+#log-panel {
+    height: 10;
+    border-top: solid #1c2530;
+    background: #0e141b;
+    padding: 0 2;
+    display: none;
+}
+
+#log-panel.visible {
+    display: block;
+}
+
+RichLog {
+    background: #0e141b;
+    color: #7d8590;
+}
+
+/* ---------- Language screen (full screen splash) ---------- */
+LanguageScreen {
+    align: center middle;
+}
+
+#lang-card {
+    width: 100%;
+    height: 100%;
+    align: center middle;
+    background: #0b0f14;
+}
+
+#lang-title {
+    color: #a78bfa;
+    text-style: bold;
+    content-align: center middle;
+    width: 100%;
+    height: 5;
+    text-align: center;
+}
+
+#lang-subtitle {
+    color: #7d8590;
+    content-align: center middle;
+    width: 100%;
+    height: 3;
+    text-align: center;
+    margin-bottom: 2;
+}
+
+#lang-card OptionList {
+    width: 44;
+    height: auto;
+    border: round #2a2f3a;
+    background: #10161d;
+}
+
+/* ---------- Connect screen ---------- */
+ConnectScreen {
+    align: center middle;
+}
+
+#connect-card {
+    width: 60;
+    height: auto;
+    background: #10161d;
+    border: round #2a2f3a;
+    padding: 2 3;
+}
+
+#connect-title {
+    color: #a78bfa;
+    text-style: bold;
+    content-align: center middle;
+    height: 2;
+    width: 100%;
+}
+
+#connect-subtitle {
+    color: #7d8590;
+    content-align: center middle;
+    height: 2;
+    width: 100%;
+    margin-bottom: 1;
+}
+
+#connect-card LoadingIndicator {
+    height: 3;
+    color: #a78bfa;
+}
+
+#connect-card OptionList {
+    height: auto;
+    max-height: 12;
+    border: round #1c2530;
+    background: #0e141b;
+    margin-top: 1;
+}
+
+#connect-card Button {
+    margin-top: 1;
+    width: 100%;
+}
+
+#connect-error {
+    color: #ff6b6b;
+    content-align: center middle;
+    width: 100%;
+    height: auto;
+    margin-top: 1;
+    display: none;
+}
+
+#connect-error.visible {
+    display: block;
+}
+
+/* ---------- Modals ---------- */
+ReadyModal, SwitchSheetModal, ConfirmModal {
+    align: center middle;
+}
+
+#login-card, #switch-card, #confirm-card {
+    width: 62;
+    height: auto;
+    background: #10161d;
+    border: round #a78bfa;
+    padding: 2 3;
+}
+
+#login-card Static, #confirm-card Static {
+    width: 100%;
+    content-align: center middle;
+    margin-bottom: 1;
+}
+
+#login-card .modal-title, #switch-card .modal-title, #confirm-card .modal-title {
+    color: #a78bfa;
+    text-style: bold;
+}
+
+#login-buttons, #confirm-buttons, #switch-buttons {
+    height: 3;
+    align: center middle;
+    margin-top: 1;
+}
+
+#login-buttons Button, #confirm-buttons Button, #switch-buttons Button {
+    margin: 0 1;
+}
+
+Footer {
+    background: #10161d;
+}
+
+Toast {
+    border: round #a78bfa;
+}

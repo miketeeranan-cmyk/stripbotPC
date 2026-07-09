@@ -1,0 +1,5 @@
+textual>=8.0
+gspread
+oauth2client
+selenium
+webdriver-manager
