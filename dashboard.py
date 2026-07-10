@@ -632,7 +632,7 @@ class DashboardScreen(Screen):
     @work(thread=True)
     def _run_monitor_loop(self, driver, sheet, stop_event: threading.Event) -> None:
         try:
-            logged_usernames, next_row = core.load_sheet_state(sheet)
+            logged_state, next_row = core.load_sheet_state(sheet)
             pending_link_fixups = {}
             while not stop_event.is_set():
                 try:
@@ -654,20 +654,39 @@ class DashboardScreen(Screen):
                                 continue
                             level = int(level_digits)
 
-                            if level >= core.LEVEL_THRESHOLD and username not in logged_usernames:
+                            action = core.decide_action(logged_state, username, level)
+
+                            if action == "new":
                                 profile_link = core.get_profile_link_via_popup(driver, row, username)
-                                core.log_user(sheet, username, level, profile_link, next_row)
-                                logged_usernames.add(username)
+                                next_row = core.apply_new_user(
+                                    sheet, logged_state, next_row, username, level, profile_link
+                                )
+                                new_row = next_row - 1
                                 self.app.call_from_thread(
-                                    self._on_new_user,
-                                    username,
-                                    level,
-                                    profile_link,
-                                    next_row,
+                                    self._on_new_user, username, level, profile_link, new_row
                                 )
                                 if not profile_link:
-                                    pending_link_fixups[username] = (next_row, 0)
-                                next_row += 1
+                                    pending_link_fixups[username] = (new_row, 0)
+
+                            elif action == "update":
+                                # Stripchat lets you self-adjust your level past 99, so a
+                                # relog at a strictly higher level replaces the old row
+                                # instead of being skipped like a same/lower-level repeat.
+                                profile_link = core.get_profile_link_via_popup(driver, row, username)
+                                old_row = logged_state[username]["row"]
+                                next_row = core.apply_update_user(
+                                    sheet, logged_state, next_row, username, level, profile_link
+                                )
+                                new_row = next_row - 1
+                                # Keep pending fixups pointed at the right row now that
+                                # everything below the deleted row shifted up by one.
+                                for uname, (row_number, cycles_tried) in list(pending_link_fixups.items()):
+                                    if row_number > old_row:
+                                        pending_link_fixups[uname] = (row_number - 1, cycles_tried)
+                                pending_link_fixups.pop(username, None)
+                                self.app.call_from_thread(
+                                    self._on_row_replaced, username, level, profile_link, old_row, new_row
+                                )
 
                             elif username in pending_link_fixups:
                                 row_number, cycles_tried = pending_link_fixups[username]
@@ -707,17 +726,38 @@ class DashboardScreen(Screen):
             row += 1
         self.app.call_from_thread(self._on_monitoring_stopped)
 
+    def _append_table_row(self, table: DataTable, timestamp: str, username: str, level: int, row_number: int, link: str) -> None:
+        lang = self.app.lang
+        link_cell = f"[link={link}]{t(lang, 'link_open')}[/link]" if link else "[dim]—[/dim]"
+        table.add_row(timestamp, username, str(level), str(row_number), link_cell)
+
     def _on_new_user(self, username: str, level: int, link: str, row_number: int) -> None:
         lang = self.app.lang
         timestamp = datetime.now().strftime("%H:%M:%S")
-        self._sheet_rows.setdefault(self.app.sheet_name, []).append(
-            (timestamp, username, str(level), str(row_number), link)
-        )
+        rows = self._sheet_rows.setdefault(self.app.sheet_name, {})
+        rows[username] = {"timestamp": timestamp, "level": level, "row": row_number, "link": link}
         table = self.query_one("#table", DataTable)
-        link_cell = f"[link={link}]{t(lang, 'link_open')}[/link]" if link else "[dim]—[/dim]"
-        table.add_row(timestamp, username, str(level), str(row_number), link_cell)
+        self._append_table_row(table, timestamp, username, level, row_number, link)
         table.move_cursor(row=table.row_count - 1)
         self.logged_count += 1
+        self.query_one("#stat-users", Static).update(
+            self._stat(t(lang, "stat_logged"), str(self.logged_count))
+        )
+
+    def _on_row_replaced(self, username: str, level: int, link: str, old_row: int, new_row: int) -> None:
+        """A repeat sighting climbed to a strictly higher level -- the old sheet
+        row was deleted and everything below it shifted up by one, so mirror
+        that in the cached table state before redrawing (see apply_update_user)."""
+        lang = self.app.lang
+        sheet_name = self.app.sheet_name
+        rows = self._sheet_rows.setdefault(sheet_name, {})
+        rows.pop(username, None)
+        for info in rows.values():
+            if info["row"] > old_row:
+                info["row"] -= 1
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        rows[username] = {"timestamp": timestamp, "level": level, "row": new_row, "link": link}
+        self._redraw_table_for_sheet(sheet_name)
         self.query_one("#stat-users", Static).update(
             self._stat(t(lang, "stat_logged"), str(self.logged_count))
         )
@@ -726,10 +766,11 @@ class DashboardScreen(Screen):
         lang = self.app.lang
         table = self.query_one("#table", DataTable)
         table.clear()
-        rows = self._sheet_rows.get(sheet_name, [])
-        for timestamp, username, level_str, row_number_str, link in rows:
-            link_cell = f"[link={link}]{t(lang, 'link_open')}[/link]" if link else "[dim]—[/dim]"
-            table.add_row(timestamp, username, level_str, row_number_str, link_cell)
+        rows = self._sheet_rows.get(sheet_name, {})
+        for username, info in sorted(rows.items(), key=lambda item: item[1]["row"]):
+            self._append_table_row(
+                table, info["timestamp"], username, info["level"], info["row"], info["link"]
+            )
         if table.row_count:
             table.move_cursor(row=table.row_count - 1)
         self.logged_count = len(rows)

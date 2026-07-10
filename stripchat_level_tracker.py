@@ -93,15 +93,68 @@ def connect_to_sheet():
 
 def load_sheet_state(sheet):
     """
-    Read column A exactly once at startup and cache it in memory: as a set for instant
-    "already logged?" membership checks, and its length to know which row to write next.
-    This replaces re-fetching the whole column from the Sheets API on every qualifying
-    row of every poll cycle -- that round-trip was the biggest source of lag, and if it
-    ever hiccuped/rate-limited it also risked double-logging or silently missing a user
-    for that cycle.
+    Read the whole sheet exactly once at startup and cache it in memory as a
+    username -> {level, row} map, plus the next free row number. This replaces
+    re-fetching from the Sheets API on every qualifying row of every poll cycle
+    -- that round-trip was the biggest source of lag, and if it ever
+    hiccuped/rate-limited it also risked double-logging or silently missing a
+    user for that cycle. The per-user level is what lets later cycles tell a
+    relog at a genuinely higher level apart from a repeat at the same/lower one
+    (see decide_action).
     """
-    existing_usernames = sheet.col_values(1)
-    return set(existing_usernames), len(existing_usernames) + 1
+    all_values = sheet.get_all_values()
+    state = {}
+    for row_number, row_values in enumerate(all_values, start=1):
+        if not row_values or not row_values[0]:
+            continue
+        username = row_values[0]
+        level_text = row_values[1] if len(row_values) > 1 else ""
+        try:
+            level = int("".join(filter(str.isdigit, level_text)))
+        except ValueError:
+            level = 0
+        state[username] = {"level": level, "row": row_number}
+    return state, len(all_values) + 1
+
+
+def decide_action(state, username, level, threshold=LEVEL_THRESHOLD):
+    """
+    Stripchat lets you self-adjust your level once you're over 99, so the same
+    person can reappear at a different number without it meaning a new user.
+    Returns "new" for a first-time qualifying sighting, "update" if they were
+    already logged but have climbed to a strictly higher level since, or
+    "skip" for a repeat at the same or a lower level (per-request: never
+    overwrite a higher logged level with a lower/equal one).
+    """
+    prev = state.get(username)
+    if prev is None:
+        return "new" if level >= threshold else "skip"
+    return "update" if level > prev["level"] else "skip"
+
+
+def apply_new_user(sheet, state, next_row, username, level, profile_link):
+    """Logs a first-time qualifying user at next_row and returns the next free row."""
+    log_user(sheet, username, level, profile_link, next_row)
+    state[username] = {"level": level, "row": next_row}
+    return next_row + 1
+
+
+def apply_update_user(sheet, state, next_row, username, level, profile_link):
+    """
+    Deletes the user's previously logged row and re-logs them at the bottom
+    with their new, higher level -- captures the level change without leaving
+    a stale duplicate row behind. Every other tracked row number above the
+    deleted one is shifted down by one so `state` stays in sync with the sheet.
+    """
+    old_row = state[username]["row"]
+    sheet.delete_rows(old_row)
+    for info in state.values():
+        if info["row"] > old_row:
+            info["row"] -= 1
+    new_row = next_row - 1
+    log_user(sheet, username, level, profile_link, new_row)
+    state[username] = {"level": level, "row": new_row}
+    return new_row + 1
 
 
 def to_output_domain(url):
@@ -191,9 +244,9 @@ def monitor(driver, sheet):
     print("Log into Stripchat manually in the opened browser window.")
     input("Once you're logged in and your stream is live, press Enter here to start monitoring...")
 
-    # Cache column A once instead of hitting the Sheets API on every qualifying row of
+    # Cache the sheet once instead of hitting the Sheets API on every qualifying row of
     # every cycle -- see load_sheet_state() for why.
-    logged_usernames, next_row = load_sheet_state(sheet)
+    logged_state, next_row = load_sheet_state(sheet)
 
     print(f"Monitoring for users level {LEVEL_THRESHOLD}+... (Ctrl+C to stop)")
 
@@ -211,13 +264,19 @@ def monitor(driver, sheet):
 
                     print(f"[debug] row {i}: {username} | level {level}")  # DEBUG
 
-                    if level >= LEVEL_THRESHOLD and username not in logged_usernames:
+                    action = decide_action(logged_state, username, level)
+                    if action != "skip":
                         # Only click into the popup for users we're actually about to log —
                         # clicking every single row every cycle would be slow and disruptive.
                         profile_link = get_profile_link_via_popup(driver, row, username)
-                        log_user(sheet, username, level, profile_link, next_row)
-                        logged_usernames.add(username)
-                        next_row += 1
+                        if action == "new":
+                            next_row = apply_new_user(
+                                sheet, logged_state, next_row, username, level, profile_link
+                            )
+                        else:
+                            next_row = apply_update_user(
+                                sheet, logged_state, next_row, username, level, profile_link
+                            )
 
                 except Exception as row_err:
                     # Row didn't match expected structure (e.g. no level badge), skip it
