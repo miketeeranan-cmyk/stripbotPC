@@ -7,10 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Stripchat viewer tracker. `stripchat_level_tracker.py` (Selenium) watches a
 live viewer list and logs users above `LEVEL_THRESHOLD` to a Google Sheet
 (`gspread` + `credentials.json`). `dashboard.py` is a Textual TUI wrapper:
-imports the tracker as `core`, drives it from `@work(thread=True)` workers,
-and adds a stylized world-map "Globe" panel (`worldmap.py`). Both entry
-points must call through the same `core` decision/logging functions — don't
-let their poll loops' qualify/log logic drift apart.
+imports the tracker as `core` and drives it from `@work(thread=True)`
+workers. Both entry points must call through the same `core` decision/logging
+functions — don't let their poll loops' qualify/log logic drift apart.
 
 ## Running
 
@@ -48,10 +47,10 @@ python stripchat_level_tracker.py   # headless CLI, same core logic
   Activity log via `_LineForwarder`.
 - **i18n**: UI text lives in `STRINGS` (en/zh), looked up via
   `t(lang, key, **kwargs)` — add new text there, not as inline literals.
-- **`worldmap.py`**: coarse, deterministic Unicode globe, not real
-  cartography. `resolve_country()` matches the active sheet name to a
-  country (exact → alias → fuzzy → substring) so the pin tracks whichever
-  sheet is selected.
+- **Screen/modal entrances**: every full-screen and modal card fades/slides
+  in via the shared `_reveal_card()` helper + the `.-visible` transition
+  class in `dashboard.tcss` — new screens/modals should call `_reveal_card(self)`
+  in `on_mount` to stay consistent.
 - Selectors (`USER_ROW_SELECTOR`, `USERNAME_SELECTOR`, `LEVEL_SELECTOR`,
   `POPUP_LINK_SELECTOR`) are brittle by design — check first if tracking
   stops finding users.

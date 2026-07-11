@@ -38,7 +38,6 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 
 import stripchat_level_tracker as core
-import worldmap
 
 DEMO = "--demo" in sys.argv
 
@@ -100,7 +99,6 @@ STRINGS = {
     "status_live": {"en": "●  LIVE", "zh": "●  运行中"},
     "status_busy": {"en": "●  CONNECTING…", "zh": "●  连接中…"},
     "status_idle": {"en": "○  STOPPED", "zh": "○  已停止"},
-    "globe_title": {"en": "🌐  GLOBE", "zh": "🌐  地球"},
     "col_time": {"en": "Time", "zh": "时间"},
     "col_username": {"en": "Username", "zh": "用户名"},
     "col_level": {"en": "Level", "zh": "等级"},
@@ -127,6 +125,15 @@ STRINGS = {
 def t(lang: str, key: str, **kw) -> str:
     text = STRINGS[key].get(lang, STRINGS[key]["en"])
     return text.format(**kw) if kw else text
+
+
+def _reveal_card(screen) -> None:
+    """Fade/slide the screen's single card container in a beat after mount,
+    instead of it snapping into place -- pairs with the `.-visible` transition
+    on each card selector in dashboard.tcss. Deferred via call_after_refresh
+    so the initial (hidden) styles are committed to a frame before the class
+    flips, otherwise Textual has nothing to transition from."""
+    screen.call_after_refresh(lambda: screen.query_one(Vertical).add_class("-visible"))
 
 
 # --------------------------------------------------------------------------
@@ -180,6 +187,7 @@ class LanguageScreen(Screen):
                 yield OptionList(id="lang-list")
 
     def on_mount(self) -> None:
+        _reveal_card(self)
         option_list = self.query_one("#lang-list", OptionList)
         option_list.add_option(Option("English", id="en"))
         option_list.add_option(Option("中文 (Chinese)", id="zh"))
@@ -208,6 +216,7 @@ class ConnectScreen(Screen):
             yield Button(t(lang, "retry"), id="retry-btn", variant="warning")
 
     def on_mount(self) -> None:
+        _reveal_card(self)
         self.query_one("#sheet-list", OptionList).display = False
         self.query_one("#retry-btn", Button).display = False
         self.connect()
@@ -296,6 +305,9 @@ class ReadyModal(ModalScreen):
                 yield Button(t(lang, "ready"), id="confirm-btn", variant="success")
                 yield Button(t(lang, "cancel"), id="cancel-btn", variant="error")
 
+    def on_mount(self) -> None:
+        _reveal_card(self)
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "confirm-btn":
             self.dismiss()
@@ -321,6 +333,7 @@ class SwitchSheetModal(ModalScreen):
                 yield Button(t(lang, "cancel"), id="switch-cancel-btn", variant="error")
 
     def on_mount(self) -> None:
+        _reveal_card(self)
         option_list = self.query_one("#switch-list", OptionList)
         if DEMO:
             names = ["Demo Sheet A", "Demo Sheet B", "Test"]
@@ -362,6 +375,7 @@ class ThresholdModal(ModalScreen):
                 yield Button(t(lang, "cancel"), id="threshold-cancel-btn", variant="error")
 
     def on_mount(self) -> None:
+        _reveal_card(self)
         self.query_one("#threshold-input", Input).focus()
 
     def action_cancel(self) -> None:
@@ -400,6 +414,9 @@ class ConfirmModal(ModalScreen):
             with Horizontal(id="confirm-buttons"):
                 yield Button(t(lang, "yes"), id="yes-btn", variant="error")
                 yield Button(t(lang, "no"), id="no-btn", variant="default")
+
+    def on_mount(self) -> None:
+        _reveal_card(self)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id == "yes-btn")
@@ -440,32 +457,27 @@ class DashboardScreen(Screen):
 
     def compose(self) -> ComposeResult:
         lang = self.app.lang
-        with Horizontal(id="topbar"):
-            yield Static(t(lang, "app_title"), id="title")
-            yield Static("", id="status-pill", classes="status-idle")
-            yield Static("", id="sheet-badge")
-        with Horizontal(id="stats-row"):
-            yield Static(self._stat(t(lang, "stat_logged"), "0"), id="stat-users", classes="stat-card")
-            yield Static(self._threshold_stat_markup(), id="stat-threshold", classes="stat-card")
-            yield Static(self._stat(t(lang, "stat_poll"), f"{core.CHECK_INTERVAL_SECONDS}s"), id="stat-interval", classes="stat-card")
-            yield Static(self._stat(t(lang, "stat_uptime"), "00:00"), id="stat-uptime", classes="stat-card")
-        with Horizontal(id="controls"):
-            yield Button(t(lang, "start_btn"), id="start-btn", variant="success")
-            yield Button(t(lang, "stop_btn"), id="stop-btn", variant="error", disabled=True)
-            yield Button(t(lang, "switch_sheet_btn"), id="switch-btn")
-            yield Button(t(lang, "threshold_btn"), id="threshold-btn")
-            yield Button(t(lang, "lang_btn"), id="lang-btn")
-            yield Button(t(lang, "quit_btn"), id="quit-btn")
-        with Horizontal(id="main-area"):
+        with Vertical(id="app-shell"):
+            with Horizontal(id="topbar"):
+                yield Static(t(lang, "app_title"), id="title")
+                yield Static("", id="status-pill", classes="status-idle")
+                yield Static("", id="sheet-badge")
+            with Horizontal(id="stats-row"):
+                yield Static(self._stat(t(lang, "stat_logged"), "0"), id="stat-users", classes="stat-card")
+                yield Static(self._threshold_stat_markup(), id="stat-threshold", classes="stat-card")
+                yield Static(self._stat(t(lang, "stat_poll"), f"{core.CHECK_INTERVAL_SECONDS}s"), id="stat-interval", classes="stat-card")
+                yield Static(self._stat(t(lang, "stat_uptime"), "00:00"), id="stat-uptime", classes="stat-card")
+            with Horizontal(id="controls"):
+                yield Button(t(lang, "start_btn"), id="start-btn", variant="success")
+                yield Button(t(lang, "stop_btn"), id="stop-btn", variant="error", disabled=True)
+                yield Button(t(lang, "switch_sheet_btn"), id="switch-btn")
+                yield Button(t(lang, "threshold_btn"), id="threshold-btn")
+                yield Button(t(lang, "lang_btn"), id="lang-btn")
+                yield Button(t(lang, "quit_btn"), id="quit-btn")
             with Vertical(id="table-wrap"):
                 yield DataTable(id="table")
-            with Vertical(id="globe-panel"):
-                with Horizontal(id="globe-header"):
-                    yield Static(t(lang, "globe_title"), id="globe-title")
-                yield Static(id="globe-map")
-                yield Static(id="globe-info")
-        with Vertical(id="log-panel"):
-            yield RichLog(id="log", wrap=True, markup=True, highlight=False)
+            with Vertical(id="log-panel"):
+                yield RichLog(id="log", wrap=True, markup=True, highlight=False)
         yield Footer()
 
     @staticmethod
@@ -491,7 +503,6 @@ class DashboardScreen(Screen):
         table.cursor_type = "row"
         table.zebra_stripes = True
         self._uptime_timer = self.set_interval(1, self._tick_uptime, pause=True)
-        self._render_globe(self.app.sheet_name)
 
     def _set_status(self, state: str) -> None:
         self._status_state = state
@@ -519,10 +530,6 @@ class DashboardScreen(Screen):
 
     def append_log(self, line: str) -> None:
         self.query_one("#log", RichLog).write(line)
-
-    def _render_globe(self, country: str) -> None:
-        self.query_one("#globe-map", Static).update(worldmap.render_map(country))
-        self.query_one("#globe-info", Static).update(worldmap.country_info(country, lang=self.app.lang))
 
     # ---------------- button / key actions ----------------
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -572,8 +579,6 @@ class DashboardScreen(Screen):
         self.query_one("#quit-btn", Button).label = t(lang, "quit_btn")
 
         self._set_status(self._status_state)
-        self.query_one("#globe-title", Static).update(t(lang, "globe_title"))
-        self._render_globe(self.app.sheet_name)
 
         if self._column_keys:
             table = self.query_one("#table", DataTable)
@@ -916,7 +921,6 @@ class DashboardScreen(Screen):
         self.app.worksheet = worksheet
         self.app.sheet_name = sheet_name
         self.query_one("#sheet-badge", Static).update(sheet_name)
-        self._render_globe(sheet_name)
         # Swap the visible table for this sheet's cached rows (empty if it
         # hasn't been visited yet this session) without losing the other
         # sheets' data -- switching back later restores it.

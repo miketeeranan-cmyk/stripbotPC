@@ -1,16 +1,25 @@
 /* Stripchat Tracker Dashboard — minimalist dark theme */
 
 Screen {
-    background: #0b0f14;
+    background: #05070a;
     color: #e6edf3;
+}
+
+/* ---------- App shell (single floating panel holding the whole dashboard,
+   instead of a loose grid of separately-boxed panels) ---------- */
+#app-shell {
+    height: 1fr;
+    margin: 1 2;
+    padding: 1 2;
+    background: #10151c;
+    border: round #1c2530;
 }
 
 /* ---------- Top bar ---------- */
 #topbar {
     height: 3;
-    background: #10161d;
-    border-bottom: solid #1c2530;
-    padding: 0 2;
+    border-bottom: solid #1a222c;
+    margin-bottom: 1;
 }
 
 #title {
@@ -22,37 +31,48 @@ Screen {
 }
 
 #sheet-badge {
-    color: #7d8590;
-    content-align: right middle;
+    color: #c9d1d9;
+    background: #161d26;
+    border: round #232d3a;
+    content-align: center middle;
     height: 3;
     width: auto;
+    padding: 0 2;
 }
 
 #status-pill {
     width: auto;
     height: 3;
-    content-align: right middle;
+    content-align: center middle;
     text-style: bold;
-    margin-right: 2;
+    margin-right: 1;
+    padding: 0 2;
+    border: round #232d3a;
+    transition: background 200ms in_out_cubic, border 200ms in_out_cubic;
 }
 
-.status-idle { color: #7d8590; }
-.status-live { color: #22d873; }
-.status-busy { color: #f5c451; }
+.status-idle { color: #7d8590; background: #7d8590 10%; border: round #262f3a; }
+.status-live { color: #22d873; background: #22d873 12%; border: round #1f6f4a; }
+.status-busy { color: #f5c451; background: #f5c451 12%; border: round #6b551f; }
 
 /* ---------- Stat cards ---------- */
 #stats-row {
-    height: 6;
-    padding: 1 2;
+    height: 4;
+    margin-bottom: 1;
 }
 
 .stat-card {
     width: 1fr;
     height: 4;
-    background: #10161d;
-    border: round #1c2530;
+    background: #141b23;
+    border: round #1e2732;
     margin-right: 1;
     content-align: center middle;
+    transition: background 150ms in_out_cubic;
+}
+
+.stat-card:hover {
+    background: #182030;
 }
 
 .stat-card:last-of-type {
@@ -72,12 +92,13 @@ Screen {
 /* ---------- Controls ---------- */
 #controls {
     height: 3;
-    padding: 0 2 1 2;
+    margin-bottom: 1;
 }
 
 #controls Button {
     margin-right: 1;
     min-width: 14;
+    transition: background 150ms in_out_cubic;
 }
 
 Button#start-btn {
@@ -120,59 +141,16 @@ Button#switch-btn:disabled, Button#threshold-btn:disabled {
     border: round #232d38;
 }
 
-/* ---------- Main content (table + globe) ---------- */
-#main-area {
-    height: 1fr;
-    padding: 0 2;
-}
-
+/* ---------- Main content (table) ---------- */
 #table-wrap {
-    width: 1fr;
-    padding: 0 1 0 0;
+    width: 100%;
+    height: 1fr;
 }
 
 DataTable {
-    background: #0e141b;
+    background: #0f151b;
     border: round #1c2530;
     height: 1fr;
-}
-
-/* ---------- Globe panel ---------- */
-#globe-panel {
-    width: 56;
-    min-width: 56;
-    height: 1fr;
-    background: #0a0f1c;
-    border: round #24406b;
-    padding: 1 2;
-}
-
-#globe-header {
-    height: 3;
-    margin-bottom: 1;
-}
-
-#globe-title {
-    color: #5fb4ff;
-    text-style: bold;
-    content-align: left middle;
-    width: 1fr;
-    height: 3;
-}
-
-#globe-map {
-    height: auto;
-    content-align: center middle;
-    text-align: center;
-    margin-bottom: 1;
-}
-
-#globe-info {
-    height: auto;
-    text-align: center;
-    border-top: solid #1c2c45;
-    padding-top: 1;
-    color: #e6edf3;
 }
 
 DataTable > .datatable--header {
@@ -188,8 +166,9 @@ DataTable > .datatable--cursor {
 /* ---------- Activity log ---------- */
 #log-panel {
     height: 10;
-    border-top: solid #1c2530;
-    background: #0e141b;
+    margin-top: 1;
+    border: round #1c2530;
+    background: #0f151b;
     padding: 0 2;
     display: none;
 }
@@ -199,7 +178,7 @@ DataTable > .datatable--cursor {
 }
 
 RichLog {
-    background: #0e141b;
+    background: #0f151b;
     color: #7d8590;
 }
 
@@ -212,7 +191,7 @@ LanguageScreen {
     width: 100%;
     height: 100%;
     align: center middle;
-    background: #0b0f14;
+    background: #05070a;
 }
 
 #lang-title {
@@ -236,7 +215,7 @@ LanguageScreen {
 #lang-card OptionList {
     width: 44;
     height: auto;
-    border: round #2a2f3a;
+    border: round #232b38;
     background: #10161d;
 }
 
@@ -249,7 +228,7 @@ ConnectScreen {
     width: 60;
     height: auto;
     background: #10161d;
-    border: round #2a2f3a;
+    border: round #232b38;
     padding: 2 3;
 }
 
@@ -309,7 +288,7 @@ ReadyModal, SwitchSheetModal, ConfirmModal, ThresholdModal {
     width: 62;
     height: auto;
     background: #10161d;
-    border: round #a78bfa;
+    border: round #232b38;
     padding: 2 3;
 }
 
@@ -332,6 +311,7 @@ ReadyModal, SwitchSheetModal, ConfirmModal, ThresholdModal {
 
 #login-buttons Button, #confirm-buttons Button, #switch-buttons Button, #threshold-buttons Button {
     margin: 0 1;
+    transition: background 150ms in_out_cubic;
 }
 
 #threshold-card Input {
@@ -339,6 +319,11 @@ ReadyModal, SwitchSheetModal, ConfirmModal, ThresholdModal {
     border: round #1c2530;
     background: #0e141b;
     color: #e6edf3;
+    transition: border 150ms in_out_cubic;
+}
+
+#threshold-card Input:focus {
+    border: round #a78bfa;
 }
 
 #threshold-error {
@@ -347,6 +332,21 @@ ReadyModal, SwitchSheetModal, ConfirmModal, ThresholdModal {
     width: 100%;
     height: auto;
     margin-top: 1;
+}
+
+/* ---------- Smooth entrances: every full-screen/modal card fades and
+   settles in a beat after mount (see _reveal_card in dashboard.py) instead
+   of snapping into place. ---------- */
+#lang-card, #connect-card, #login-card, #switch-card, #confirm-card, #threshold-card {
+    opacity: 0;
+    offset: 0 2;
+    transition: opacity 180ms in_out_cubic, offset 180ms in_out_cubic;
+}
+
+#lang-card.-visible, #connect-card.-visible, #login-card.-visible,
+#switch-card.-visible, #confirm-card.-visible, #threshold-card.-visible {
+    opacity: 1;
+    offset: 0 0;
 }
 
 Footer {
