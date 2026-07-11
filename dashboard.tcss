@@ -106,15 +106,15 @@ Button#stop-btn:disabled {
     border: round #402328;
 }
 
-Button#switch-btn, Button#quit-btn, Button#lang-btn {
+Button#switch-btn, Button#threshold-btn, Button#quit-btn, Button#lang-btn {
     background: #182028;
     color: #c9d1d9;
     border: round #263140;
 }
-Button#switch-btn:hover, Button#quit-btn:hover, Button#lang-btn:hover {
+Button#switch-btn:hover, Button#threshold-btn:hover, Button#quit-btn:hover, Button#lang-btn:hover {
     background: #212b36;
 }
-Button#switch-btn:disabled {
+Button#switch-btn:disabled, Button#threshold-btn:disabled {
     background: #171d24;
     color: #6d7986;
     border: round #232d38;
@@ -301,11 +301,11 @@ ConnectScreen {
 }
 
 /* ---------- Modals ---------- */
-ReadyModal, SwitchSheetModal, ConfirmModal {
+ReadyModal, SwitchSheetModal, ConfirmModal, ThresholdModal {
     align: center middle;
 }
 
-#login-card, #switch-card, #confirm-card {
+#login-card, #switch-card, #confirm-card, #threshold-card {
     width: 62;
     height: auto;
     background: #10161d;
@@ -313,25 +313,40 @@ ReadyModal, SwitchSheetModal, ConfirmModal {
     padding: 2 3;
 }
 
-#login-card Static, #confirm-card Static {
+#login-card Static, #confirm-card Static, #threshold-card Static {
     width: 100%;
     content-align: center middle;
     margin-bottom: 1;
 }
 
-#login-card .modal-title, #switch-card .modal-title, #confirm-card .modal-title {
+#login-card .modal-title, #switch-card .modal-title, #confirm-card .modal-title, #threshold-card .modal-title {
     color: #a78bfa;
     text-style: bold;
 }
 
-#login-buttons, #confirm-buttons, #switch-buttons {
+#login-buttons, #confirm-buttons, #switch-buttons, #threshold-buttons {
     height: 3;
     align: center middle;
     margin-top: 1;
 }
 
-#login-buttons Button, #confirm-buttons Button, #switch-buttons Button {
+#login-buttons Button, #confirm-buttons Button, #switch-buttons Button, #threshold-buttons Button {
     margin: 0 1;
+}
+
+#threshold-card Input {
+    margin-top: 1;
+    border: round #1c2530;
+    background: #0e141b;
+    color: #e6edf3;
+}
+
+#threshold-error {
+    color: #ff6b6b;
+    content-align: center middle;
+    width: 100%;
+    height: auto;
+    margin-top: 1;
 }
 
 Footer {

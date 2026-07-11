@@ -29,6 +29,7 @@ from textual.widgets import (
     Button,
     DataTable,
     Footer,
+    Input,
     LoadingIndicator,
     OptionList,
     RichLog,
@@ -78,6 +79,19 @@ STRINGS = {
     "start_btn": {"en": "▶  Start", "zh": "▶  开始"},
     "stop_btn": {"en": "■  Stop", "zh": "■  停止"},
     "switch_sheet_btn": {"en": "Switch Sheet", "zh": "切换工作表"},
+    "threshold_btn": {"en": "Set Threshold", "zh": "设置阈值"},
+    "threshold_modal_title": {"en": "Set level threshold", "zh": "设置等级阈值"},
+    "threshold_modal_body": {
+        "en": "Only viewers at or above this level get logged. Takes effect "
+        "on the next poll cycle -- already-logged users are unaffected.",
+        "zh": "只有达到或高于此等级的观众才会被记录。将在下一次轮询时生效——"
+        "已记录的用户不受影响。",
+    },
+    "invalid_threshold": {
+        "en": "Enter a whole number of 1 or higher.",
+        "zh": "请输入大于等于 1 的整数。",
+    },
+    "apply_btn": {"en": "Apply", "zh": "应用"},
     "quit_btn": {"en": "Quit", "zh": "退出"},
     "stat_logged": {"en": "Logged", "zh": "已记录"},
     "stat_threshold": {"en": "Threshold", "zh": "等级阈值"},
@@ -328,6 +342,49 @@ class SwitchSheetModal(ModalScreen):
 
 
 # --------------------------------------------------------------------------
+# Modal: set the qualifying level threshold. Reachable before Start and while
+# monitoring is live -- decide_action() only consults the threshold for
+# not-yet-logged users, so changing it mid-run is safe and just takes effect
+# on the next poll cycle (see _run_monitor_loop / _run_demo_loop).
+# --------------------------------------------------------------------------
+class ThresholdModal(ModalScreen):
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        lang = self.app.lang
+        with Vertical(id="threshold-card"):
+            yield Static(t(lang, "threshold_modal_title"), classes="modal-title")
+            yield Static(t(lang, "threshold_modal_body"))
+            yield Input(value=str(self.app.threshold), id="threshold-input", type="integer")
+            yield Static("", id="threshold-error")
+            with Horizontal(id="threshold-buttons"):
+                yield Button(t(lang, "apply_btn"), id="threshold-apply-btn", variant="success")
+                yield Button(t(lang, "cancel"), id="threshold-cancel-btn", variant="error")
+
+    def on_mount(self) -> None:
+        self.query_one("#threshold-input", Input).focus()
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "threshold-cancel-btn":
+            self.dismiss(None)
+        elif event.button.id == "threshold-apply-btn":
+            self._submit()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self._submit()
+
+    def _submit(self) -> None:
+        raw = self.query_one("#threshold-input", Input).value.strip()
+        if not raw.isdigit() or int(raw) < 1:
+            self.query_one("#threshold-error", Static).update(t(self.app.lang, "invalid_threshold"))
+            return
+        self.dismiss(int(raw))
+
+
+# --------------------------------------------------------------------------
 # Modal: generic confirm (used for Quit while running)
 # --------------------------------------------------------------------------
 class ConfirmModal(ModalScreen):
@@ -356,6 +413,7 @@ class DashboardScreen(Screen):
         Binding("s", "start", "Start / 开始"),
         Binding("x", "stop", "Stop / 停止"),
         Binding("l", "toggle_log", "Toggle log / 日志"),
+        Binding("v", "edit_threshold", "Threshold / 阈值"),
         Binding("t", "toggle_lang", "Language / 语言"),
         Binding("q", "quit_app", "Quit / 退出"),
     ]
@@ -388,13 +446,14 @@ class DashboardScreen(Screen):
             yield Static("", id="sheet-badge")
         with Horizontal(id="stats-row"):
             yield Static(self._stat(t(lang, "stat_logged"), "0"), id="stat-users", classes="stat-card")
-            yield Static(self._stat(t(lang, "stat_threshold"), f"Lv {core.LEVEL_THRESHOLD}+"), id="stat-threshold", classes="stat-card")
+            yield Static(self._threshold_stat_markup(), id="stat-threshold", classes="stat-card")
             yield Static(self._stat(t(lang, "stat_poll"), f"{core.CHECK_INTERVAL_SECONDS}s"), id="stat-interval", classes="stat-card")
             yield Static(self._stat(t(lang, "stat_uptime"), "00:00"), id="stat-uptime", classes="stat-card")
         with Horizontal(id="controls"):
             yield Button(t(lang, "start_btn"), id="start-btn", variant="success")
             yield Button(t(lang, "stop_btn"), id="stop-btn", variant="error", disabled=True)
             yield Button(t(lang, "switch_sheet_btn"), id="switch-btn")
+            yield Button(t(lang, "threshold_btn"), id="threshold-btn")
             yield Button(t(lang, "lang_btn"), id="lang-btn")
             yield Button(t(lang, "quit_btn"), id="quit-btn")
         with Horizontal(id="main-area"):
@@ -412,6 +471,10 @@ class DashboardScreen(Screen):
     @staticmethod
     def _stat(label: str, value: str) -> str:
         return f"[dim]{label}[/dim]\n[bold]{value}[/bold]"
+
+    def _threshold_stat_markup(self) -> str:
+        lang = self.app.lang
+        return self._stat(t(lang, "stat_threshold"), f"Lv {self.app.threshold}+")
 
     def on_mount(self) -> None:
         lang = self.app.lang
@@ -469,6 +532,8 @@ class DashboardScreen(Screen):
             self.action_stop()
         elif event.button.id == "switch-btn":
             self.action_switch_sheet()
+        elif event.button.id == "threshold-btn":
+            self.action_edit_threshold()
         elif event.button.id == "lang-btn":
             self.action_toggle_lang()
         elif event.button.id == "quit-btn":
@@ -485,9 +550,7 @@ class DashboardScreen(Screen):
         self.query_one("#stat-users", Static).update(
             self._stat(t(lang, "stat_logged"), str(self.logged_count))
         )
-        self.query_one("#stat-threshold", Static).update(
-            self._stat(t(lang, "stat_threshold"), f"Lv {core.LEVEL_THRESHOLD}+")
-        )
+        self.query_one("#stat-threshold", Static).update(self._threshold_stat_markup())
         self.query_one("#stat-interval", Static).update(
             self._stat(t(lang, "stat_poll"), f"{core.CHECK_INTERVAL_SECONDS}s")
         )
@@ -504,6 +567,7 @@ class DashboardScreen(Screen):
         self.query_one("#start-btn", Button).label = t(lang, "start_btn")
         self.query_one("#stop-btn", Button).label = t(lang, "stop_btn")
         self.query_one("#switch-btn", Button).label = t(lang, "switch_sheet_btn")
+        self.query_one("#threshold-btn", Button).label = t(lang, "threshold_btn")
         self.query_one("#lang-btn", Button).label = t(lang, "lang_btn")
         self.query_one("#quit-btn", Button).label = t(lang, "quit_btn")
 
@@ -635,6 +699,10 @@ class DashboardScreen(Screen):
             logged_state, next_row = core.load_sheet_state(sheet)
             pending_link_fixups = {}
             while not stop_event.is_set():
+                # Re-read each cycle (mirrors stop_event.is_set() above) so a
+                # threshold change from the Threshold modal applies to the very
+                # next poll without needing a restart.
+                threshold = self.app.threshold
                 try:
                     rows = driver.find_elements(core.By.CSS_SELECTOR, core.USER_ROW_SELECTOR)
                     for row in rows:
@@ -654,7 +722,7 @@ class DashboardScreen(Screen):
                                 continue
                             level = int(level_digits)
 
-                            action = core.decide_action(logged_state, username, level)
+                            action = core.decide_action(logged_state, username, level, threshold=threshold)
 
                             if action == "new":
                                 profile_link = core.get_profile_link_via_popup(driver, row, username)
@@ -720,7 +788,7 @@ class DashboardScreen(Screen):
             if stop_event.wait(wait):
                 break
             username = _demo_username()
-            level = random.randint(core.LEVEL_THRESHOLD, core.LEVEL_THRESHOLD + 40)
+            level = random.randint(self.app.threshold, self.app.threshold + 40)
             link = f"https://stripchat.com/{username}"
             self.app.call_from_thread(self._on_new_user, username, level, link, row)
             row += 1
@@ -815,6 +883,15 @@ class DashboardScreen(Screen):
         panel = self.query_one("#log-panel")
         panel.toggle_class("visible")
 
+    def action_edit_threshold(self) -> None:
+        self.app.push_screen(ThresholdModal(), self._on_threshold_picked)
+
+    def _on_threshold_picked(self, value) -> None:
+        if value is None:
+            return  # picker was cancelled -- leave the current threshold as-is
+        self.app.threshold = value
+        self.query_one("#stat-threshold", Static).update(self._threshold_stat_markup())
+
     def action_switch_sheet(self) -> None:
         # Only reachable before Start / after Stop -- the button is disabled
         # while monitoring is live, this is just a safety net.
@@ -883,6 +960,7 @@ class TrackerApp(App):
         self.spreadsheet = None
         self.worksheet = None
         self.sheet_name = ""
+        self.threshold = core.LEVEL_THRESHOLD
 
     def on_mount(self) -> None:
         self.push_screen(LanguageScreen())
