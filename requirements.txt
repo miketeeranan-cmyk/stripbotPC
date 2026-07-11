@@ -1,4 +1,4 @@
-textual>=8.0
+Flask
 gspread
 oauth2client
 selenium

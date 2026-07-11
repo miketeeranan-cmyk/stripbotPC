@@ -29,7 +29,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 # ---------------- CONFIG ----------------
 SHEET_NAME = "stripchat tracker"
 LEVEL_THRESHOLD = 30
-CHECK_INTERVAL_SECONDS = 5
+CHECK_INTERVAL_SECONDS = 2
 DASHBOARD_URL = "https://stripchat.com"  # your live/dashboard page
 SITE_BASE_URL = "https://stripchat.com"  # used to build full profile links from the relative href
 # Domain to write into the sheet's link column -- lets you keep browsing on .ooo

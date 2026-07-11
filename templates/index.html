@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stripchat Tracker</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+<div id="app">
+
+  <section id="screen-language" class="screen">
+    <div class="card">
+      <h1 data-i18n="app_title"></h1>
+      <p class="subtitle">Choose your language / 选择语言</p>
+      <div class="option-list" id="lang-list">
+        <button class="option" data-lang="en">English</button>
+        <button class="option" data-lang="zh">中文 (Chinese)</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="screen-connect" class="screen hidden">
+    <div class="card">
+      <h1 data-i18n="app_title"></h1>
+      <p class="subtitle" id="connect-subtitle"></p>
+      <div class="spinner" id="connect-spinner"></div>
+      <div class="error hidden" id="connect-error"></div>
+      <div class="option-list hidden" id="sheet-list"></div>
+      <button class="btn btn-warning hidden" id="retry-btn" data-i18n="retry"></button>
+    </div>
+  </section>
+
+  <section id="screen-dashboard" class="screen hidden">
+    <div class="shell">
+      <header class="topbar">
+        <h1 data-i18n="app_title"></h1>
+        <span class="status-pill status-idle" id="status-pill"></span>
+        <span class="sheet-badge" id="sheet-badge"></span>
+      </header>
+
+      <div class="stats-row">
+        <div class="stat-card">
+          <span class="stat-label" data-i18n="stat_logged"></span>
+          <span class="stat-value" id="stat-logged">0</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label" data-i18n="stat_threshold"></span>
+          <span class="stat-value" id="stat-threshold"></span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label" data-i18n="stat_poll"></span>
+          <span class="stat-value" id="stat-poll"></span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label" data-i18n="stat_uptime"></span>
+          <span class="stat-value" id="stat-uptime">00:00</span>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="btn btn-success" id="start-btn" data-i18n="start_btn"></button>
+        <button class="btn btn-error" id="stop-btn" data-i18n="stop_btn" disabled></button>
+        <button class="btn" id="switch-btn" data-i18n="switch_sheet_btn"></button>
+        <button class="btn" id="threshold-btn" data-i18n="threshold_btn"></button>
+        <button class="btn" id="lang-btn" data-i18n="lang_btn"></button>
+        <button class="btn btn-error" id="quit-btn" data-i18n="quit_btn"></button>
+      </div>
+
+      <div class="log-panel" id="log-panel">
+        <div class="log-title" data-i18n="activity_log"></div>
+        <div class="log-table-wrap">
+          <table id="log-table">
+            <thead>
+              <tr>
+                <th data-i18n="field_username"></th>
+                <th data-i18n="field_level"></th>
+                <th data-i18n="link_label"></th>
+                <th data-i18n="field_time"></th>
+              </tr>
+            </thead>
+            <tbody id="log-output"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="overlay hidden" id="overlay"></div>
+
+  <div class="modal hidden" id="modal-ready">
+    <div class="card">
+      <h2 id="ready-title"></h2>
+      <p id="ready-body"></p>
+      <div class="modal-buttons">
+        <button class="btn btn-success" id="ready-confirm-btn" data-i18n="ready"></button>
+        <button class="btn btn-error" id="ready-cancel-btn" data-i18n="cancel"></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="modal-switch-sheet">
+    <div class="card">
+      <h2 data-i18n="switch_sheet_title"></h2>
+      <div class="option-list" id="switch-list"></div>
+      <div class="modal-buttons">
+        <button class="btn btn-error" id="switch-cancel-btn" data-i18n="cancel"></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="modal-threshold">
+    <div class="card">
+      <h2 data-i18n="threshold_modal_title"></h2>
+      <p data-i18n="threshold_modal_body"></p>
+      <input type="number" id="threshold-input" min="1" step="1">
+      <div class="error hidden" id="threshold-error"></div>
+      <div class="modal-buttons">
+        <button class="btn btn-success" id="threshold-apply-btn" data-i18n="apply_btn"></button>
+        <button class="btn btn-error" id="threshold-cancel-btn" data-i18n="cancel"></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="modal-confirm">
+    <div class="card">
+      <h2 data-i18n="confirm_title"></h2>
+      <p id="confirm-message"></p>
+      <div class="modal-buttons">
+        <button class="btn btn-error" id="confirm-yes-btn" data-i18n="yes"></button>
+        <button class="btn" id="confirm-no-btn" data-i18n="no"></button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  window.__STRINGS__ = {{ strings | tojson }};
+  window.__DEMO__ = {{ demo | tojson }};
+  window.__THRESHOLD__ = {{ threshold | tojson }};
+  window.__POLL_INTERVAL__ = {{ poll_interval | tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/i18n.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

@@ -1,53 +1,50 @@
 """
 Stripchat Tracker Dashboard
 ---------------------------
-A terminal UI wrapper around stripchat_level_tracker.py.
+A local Flask web control panel around stripchat_level_tracker.py.
 
-Pick a Google Sheet tab, hit Start, and watch newly-qualifying viewers land
-in the table (and as a toast popup) in real time, without ever leaving the
-terminal.
+Pick a Google Sheet tab, hit Start, and watch the activity log for
+newly-qualifying viewers -- the sheet itself is the live table (open it in
+another tab), this page is just start/stop/threshold/sheet control.
 
 Run:
     python dashboard.py            (real mode — needs credentials.json + Chrome)
     python dashboard.py --demo     (demo mode — fake data, no setup required)
+
+A browser tab to the dashboard opens automatically a moment after the
+server starts.
 """
 
+import logging
+import os
+import random
+import subprocess
 import sys
 import threading
 import time
+import webbrowser
 from datetime import datetime
 
-from rich.text import Text
-
-from textual import work
-from textual.app import App, ComposeResult
-from textual.binding import Binding
-from textual.containers import Center, Horizontal, Vertical
-from textual.render import measure
-from textual.screen import ModalScreen, Screen
-from textual.widgets import (
-    Button,
-    DataTable,
-    Footer,
-    Input,
-    LoadingIndicator,
-    OptionList,
-    RichLog,
-    Static,
-)
-from textual.widgets.option_list import Option
+from flask import Flask, jsonify, render_template, request
 
 import stripchat_level_tracker as core
 
-DEMO = "--demo" in sys.argv
+# Quiet the terminal: Werkzeug logs every request (including the dashboard's
+# own ~1.2s /api/poll heartbeat) at INFO level by default, which floods a
+# launcher's Terminal window with noise. Errors still get through.
+logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
+DEMO = "--demo" in sys.argv
+HOST = "127.0.0.1"
+PORT = 5057
+MAX_LOG_LINES = 500
 
 # --------------------------------------------------------------------------
-# i18n — English / Chinese. `t(lang, key, **kw)` looks up STRINGS[key][lang]
-# and `.format(**kw)`s it. Screens read the active language off `self.app.lang`.
+# i18n — English / Chinese. Sent to the page as JSON; the client's
+# static/js/i18n.js does the lookup/formatting. The server never localizes.
 # --------------------------------------------------------------------------
 STRINGS = {
-    "app_title": {"en": "◆ STRIPCHAT TRACKER", "zh": "◆ STRIPCHAT 追踪器"},
+    "app_title": {"en": "STRIPCHAT TRACKER", "zh": "STRIPCHAT 追踪器"},
     "connecting": {"en": "Connecting to Google Sheets...", "zh": "正在连接 Google Sheets..."},
     "demo_mode": {"en": "Demo mode — no Google account needed", "zh": "演示模式 — 无需 Google 账号"},
     "select_sheet": {"en": "Select a sheet/tab to log to:", "zh": "选择要记录到的工作表/标签页："},
@@ -75,8 +72,8 @@ STRINGS = {
         "en": "Monitoring is running. Stop it and quit?",
         "zh": "监控正在运行。要停止并退出吗？",
     },
-    "start_btn": {"en": "▶  Start", "zh": "▶  开始"},
-    "stop_btn": {"en": "■  Stop", "zh": "■  停止"},
+    "start_btn": {"en": "Start", "zh": "开始"},
+    "stop_btn": {"en": "Stop", "zh": "停止"},
     "switch_sheet_btn": {"en": "Switch Sheet", "zh": "切换工作表"},
     "threshold_btn": {"en": "Set Threshold", "zh": "设置阈值"},
     "threshold_modal_title": {"en": "Set level threshold", "zh": "设置等级阈值"},
@@ -96,77 +93,29 @@ STRINGS = {
     "stat_threshold": {"en": "Threshold", "zh": "等级阈值"},
     "stat_poll": {"en": "Poll", "zh": "轮询间隔"},
     "stat_uptime": {"en": "Uptime", "zh": "运行时间"},
-    "status_live": {"en": "●  LIVE", "zh": "●  运行中"},
-    "status_busy": {"en": "●  CONNECTING…", "zh": "●  连接中…"},
-    "status_idle": {"en": "○  STOPPED", "zh": "○  已停止"},
-    "col_time": {"en": "Time", "zh": "时间"},
-    "col_username": {"en": "Username", "zh": "用户名"},
-    "col_level": {"en": "Level", "zh": "等级"},
-    "col_row": {"en": "Row", "zh": "行"},
-    "col_link": {"en": "Link", "zh": "链接"},
-    "link_open": {"en": "open", "zh": "打开"},
+    "status_live": {"en": "LIVE", "zh": "运行中"},
+    "status_busy": {"en": "CONNECTING…", "zh": "连接中…"},
+    "status_idle": {"en": "STOPPED", "zh": "已停止"},
     "error_title": {"en": "Error", "zh": "错误"},
     "browser_start_failed": {
         "en": "Couldn't start the browser: {error}",
         "zh": "无法启动浏览器：{error}",
     },
-    "bind_start": {"en": "Start", "zh": "开始"},
-    "bind_stop": {"en": "Stop", "zh": "停止"},
-    "bind_toggle_log": {"en": "Toggle log", "zh": "切换日志"},
-    "bind_quit": {"en": "Quit", "zh": "退出"},
     "lang_prompt": {"en": "Choose your language", "zh": "选择语言"},
     "lang_english": {"en": "English", "zh": "English"},
     "lang_chinese": {"en": "中文 (Chinese)", "zh": "中文 (Chinese)"},
     "lang_btn": {"en": "中文", "zh": "English"},
-    "bind_toggle_lang": {"en": "Language", "zh": "语言"},
+    "activity_log": {"en": "Activity Log", "zh": "活动日志"},
+    "link_label": {"en": "Link", "zh": "链接"},
+    "field_username": {"en": "Username", "zh": "用户名"},
+    "field_level": {"en": "Level", "zh": "等级"},
+    "field_time": {"en": "Time", "zh": "时间"},
 }
-
-
-def t(lang: str, key: str, **kw) -> str:
-    text = STRINGS[key].get(lang, STRINGS[key]["en"])
-    return text.format(**kw) if kw else text
-
-
-def _reveal_card(screen) -> None:
-    """Fade/slide the screen's single card container in a beat after mount,
-    instead of it snapping into place -- pairs with the `.-visible` transition
-    on each card selector in dashboard.tcss. Deferred via call_after_refresh
-    so the initial (hidden) styles are committed to a frame before the class
-    flips, otherwise Textual has nothing to transition from."""
-    screen.call_after_refresh(lambda: screen.query_one(Vertical).add_class("-visible"))
-
-
-# --------------------------------------------------------------------------
-# Line-buffered stdout forwarder: lets us reuse core's existing print()-based
-# debug/status output (popup retry messages, "Logged: ..." lines, page-load
-# warnings) as content for the dashboard's Activity log, instead of losing it
-# or letting it corrupt the TUI's screen rendering.
-# --------------------------------------------------------------------------
-class _LineForwarder:
-    def __init__(self, on_line):
-        self._on_line = on_line
-        self._buf = ""
-
-    def write(self, s):
-        self._buf += s
-        while "\n" in self._buf:
-            line, self._buf = self._buf.split("\n", 1)
-            if line.strip():
-                self._on_line(line)
-        return len(s)
-
-    def flush(self):
-        pass
-
-    def isatty(self):
-        return False
 
 
 # --------------------------------------------------------------------------
 # Demo data generator (used with --demo, no Google/Selenium needed at all)
 # --------------------------------------------------------------------------
-import random
-
 _DEMO_ADJ = ["velvet", "crimson", "lunar", "quiet", "electric", "amber", "wild", "neon"]
 _DEMO_NOUN = ["fox", "star", "raven", "wolf", "tiger", "storm", "comet", "lotus"]
 
@@ -176,799 +125,451 @@ def _demo_username():
 
 
 # --------------------------------------------------------------------------
-# Language screen — pick English or Chinese before anything else
+# Global app state — one process, one operator. Guarded by `lock` since
+# request handlers and the background monitor/demo-loop thread all touch it.
+# The dashboard is a control panel, not a data view -- the Google Sheet is
+# already the live table, so there's no per-row cache here, just a running
+# count and a rolling activity-log buffer that the page polls.
 # --------------------------------------------------------------------------
-class LanguageScreen(Screen):
-    def compose(self) -> ComposeResult:
-        with Vertical(id="lang-card"):
-            yield Static("◆ STRIPCHAT TRACKER", id="lang-title")
-            yield Static("Choose your language / 选择语言", id="lang-subtitle")
-            with Center():
-                yield OptionList(id="lang-list")
-
-    def on_mount(self) -> None:
-        _reveal_card(self)
-        option_list = self.query_one("#lang-list", OptionList)
-        option_list.add_option(Option("English", id="en"))
-        option_list.add_option(Option("中文 (Chinese)", id="zh"))
-        option_list.focus()
-
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        self.app.lang = str(event.option.id)
-        self.app.push_screen(ConnectScreen())
-
-
-# --------------------------------------------------------------------------
-# Connect screen — authorize + pick a worksheet tab
-# --------------------------------------------------------------------------
-class ConnectScreen(Screen):
-    def compose(self) -> ComposeResult:
-        lang = self.app.lang
-        with Vertical(id="connect-card"):
-            yield Static(t(lang, "app_title"), id="connect-title")
-            yield Static(
-                t(lang, "connecting") if not DEMO else t(lang, "demo_mode"),
-                id="connect-subtitle",
-            )
-            yield LoadingIndicator()
-            yield OptionList(id="sheet-list")
-            yield Static("", id="connect-error")
-            yield Button(t(lang, "retry"), id="retry-btn", variant="warning")
-
-    def on_mount(self) -> None:
-        _reveal_card(self)
-        self.query_one("#sheet-list", OptionList).display = False
-        self.query_one("#retry-btn", Button).display = False
-        self.connect()
-
-    @work(thread=True)
-    def connect(self) -> None:
-        if DEMO:
-            time.sleep(0.6)
-            names = ["Demo Sheet A", "Demo Sheet B", "Test"]
-            self.app.call_from_thread(self._on_connected, None, names)
-            return
-        try:
-            scope = [
-                "https://spreadsheets.google.com/feeds",
-                "https://www.googleapis.com/auth/drive",
-            ]
-            creds = core.ServiceAccountCredentials.from_json_keyfile_name(
-                "credentials.json", scope
-            )
-            client = core.gspread.authorize(creds)
-            spreadsheet = client.open(core.SHEET_NAME)
-            names = [ws.title for ws in spreadsheet.worksheets()]
-            self.app.call_from_thread(self._on_connected, spreadsheet, names)
-        except Exception as e:
-            self.app.call_from_thread(self._on_error, str(e))
-
-    def _on_connected(self, spreadsheet, names) -> None:
-        self.app.spreadsheet = spreadsheet
-        self.query_one(LoadingIndicator).display = False
-        self.query_one("#connect-subtitle", Static).update(
-            t(self.app.lang, "select_sheet")
-        )
-        option_list = self.query_one("#sheet-list", OptionList)
-        option_list.clear_options()
-        for name in names:
-            option_list.add_option(Option(name, id=name))
-        option_list.display = True
-        option_list.focus()
-
-    def _on_error(self, message: str) -> None:
-        self.query_one(LoadingIndicator).display = False
-        self.query_one("#connect-subtitle", Static).update(t(self.app.lang, "connect_failed"))
-        error = self.query_one("#connect-error", Static)
-        error.update(message)
-        error.add_class("visible")
-        self.query_one("#retry-btn", Button).display = True
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "retry-btn":
-            self.query_one("#retry-btn", Button).display = False
-            self.query_one("#connect-error", Static).remove_class("visible")
-            self.query_one(LoadingIndicator).display = True
-            self.query_one("#connect-subtitle", Static).update(t(self.app.lang, "connecting"))
-            self.connect()
-
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        sheet_name = str(event.option.id)
-        if DEMO:
-            self.app.sheet_name = sheet_name
-            self.app.worksheet = None
-        else:
-            self.app.worksheet = self.app.spreadsheet.worksheet(sheet_name)
-            self.app.sheet_name = sheet_name
-        self.app.push_screen(DashboardScreen())
-
-
-# --------------------------------------------------------------------------
-# Modal: generic "pause and confirm" gate -- used both for the initial manual
-# login and for the "go navigate to the right channel" step after switching
-# sheets, so both flows share one Ready/Cancel affordance.
-# --------------------------------------------------------------------------
-class ReadyModal(ModalScreen):
-    def __init__(self, title: str, body: str, on_confirm, on_cancel):
-        super().__init__()
-        self._title = title
-        self._body = body
-        self._on_confirm = on_confirm
-        self._on_cancel = on_cancel
-
-    def compose(self) -> ComposeResult:
-        lang = self.app.lang
-        with Vertical(id="login-card"):
-            yield Static(self._title, classes="modal-title")
-            yield Static(self._body)
-            with Horizontal(id="login-buttons"):
-                yield Button(t(lang, "ready"), id="confirm-btn", variant="success")
-                yield Button(t(lang, "cancel"), id="cancel-btn", variant="error")
-
-    def on_mount(self) -> None:
-        _reveal_card(self)
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "confirm-btn":
-            self.dismiss()
-            self._on_confirm()
-        else:
-            self.dismiss()
-            self._on_cancel()
-
-
-# --------------------------------------------------------------------------
-# Modal: switch sheet/tab while stopped. Always dismissable (Cancel button +
-# Escape) so it can never sit as a dead-end scrim over the dashboard.
-# --------------------------------------------------------------------------
-class SwitchSheetModal(ModalScreen):
-    BINDINGS = [Binding("escape", "cancel_switch", "Cancel")]
-
-    def compose(self) -> ComposeResult:
-        lang = self.app.lang
-        with Vertical(id="switch-card"):
-            yield Static(t(lang, "switch_sheet_title"), classes="modal-title")
-            yield OptionList(id="switch-list")
-            with Horizontal(id="switch-buttons"):
-                yield Button(t(lang, "cancel"), id="switch-cancel-btn", variant="error")
-
-    def on_mount(self) -> None:
-        _reveal_card(self)
-        option_list = self.query_one("#switch-list", OptionList)
-        if DEMO:
-            names = ["Demo Sheet A", "Demo Sheet B", "Test"]
-        else:
-            names = [ws.title for ws in self.app.spreadsheet.worksheets()]
-        for name in names:
-            option_list.add_option(Option(name, id=name))
-        option_list.focus()
-
-    def action_cancel_switch(self) -> None:
-        self.dismiss(None)
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "switch-cancel-btn":
-            self.dismiss(None)
-
-    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
-        self.dismiss(str(event.option.id))
-
-
-# --------------------------------------------------------------------------
-# Modal: set the qualifying level threshold. Reachable before Start and while
-# monitoring is live -- decide_action() only consults the threshold for
-# not-yet-logged users, so changing it mid-run is safe and just takes effect
-# on the next poll cycle (see _run_monitor_loop / _run_demo_loop).
-# --------------------------------------------------------------------------
-class ThresholdModal(ModalScreen):
-    BINDINGS = [Binding("escape", "cancel", "Cancel")]
-
-    def compose(self) -> ComposeResult:
-        lang = self.app.lang
-        with Vertical(id="threshold-card"):
-            yield Static(t(lang, "threshold_modal_title"), classes="modal-title")
-            yield Static(t(lang, "threshold_modal_body"))
-            yield Input(value=str(self.app.threshold), id="threshold-input", type="integer")
-            yield Static("", id="threshold-error")
-            with Horizontal(id="threshold-buttons"):
-                yield Button(t(lang, "apply_btn"), id="threshold-apply-btn", variant="success")
-                yield Button(t(lang, "cancel"), id="threshold-cancel-btn", variant="error")
-
-    def on_mount(self) -> None:
-        _reveal_card(self)
-        self.query_one("#threshold-input", Input).focus()
-
-    def action_cancel(self) -> None:
-        self.dismiss(None)
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "threshold-cancel-btn":
-            self.dismiss(None)
-        elif event.button.id == "threshold-apply-btn":
-            self._submit()
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        self._submit()
-
-    def _submit(self) -> None:
-        raw = self.query_one("#threshold-input", Input).value.strip()
-        if not raw.isdigit() or int(raw) < 1:
-            self.query_one("#threshold-error", Static).update(t(self.app.lang, "invalid_threshold"))
-            return
-        self.dismiss(int(raw))
-
-
-# --------------------------------------------------------------------------
-# Modal: generic confirm (used for Quit while running)
-# --------------------------------------------------------------------------
-class ConfirmModal(ModalScreen):
-    def __init__(self, message: str):
-        super().__init__()
-        self._message = message
-
-    def compose(self) -> ComposeResult:
-        lang = self.app.lang
-        with Vertical(id="confirm-card"):
-            yield Static(t(lang, "confirm_title"), classes="modal-title")
-            yield Static(self._message)
-            with Horizontal(id="confirm-buttons"):
-                yield Button(t(lang, "yes"), id="yes-btn", variant="error")
-                yield Button(t(lang, "no"), id="no-btn", variant="default")
-
-    def on_mount(self) -> None:
-        _reveal_card(self)
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        self.dismiss(event.button.id == "yes-btn")
-
-
-# --------------------------------------------------------------------------
-# Main dashboard screen
-# --------------------------------------------------------------------------
-class DashboardScreen(Screen):
-    BINDINGS = [
-        Binding("s", "start", "Start / 开始"),
-        Binding("x", "stop", "Stop / 停止"),
-        Binding("l", "toggle_log", "Toggle log / 日志"),
-        Binding("v", "edit_threshold", "Threshold / 阈值"),
-        Binding("t", "toggle_lang", "Language / 语言"),
-        Binding("q", "quit_app", "Quit / 退出"),
-    ]
-
+class AppState:
     def __init__(self):
-        super().__init__()
-        self.driver = None
-        self.stop_event = None
-        self.monitoring = False
-        self.logged_count = 0
-        self.start_time = None
-        self._uptime_timer = None
-        self._old_stdout = None
-        self._column_keys = None
-        self._status_state = "idle"
-        self._quit_after_stop = False
-        # Cached table rows per sheet name, so switching away and back doesn't
-        # lose what's already been logged this session.
-        self._sheet_rows = {}
-        # Set when Switch Sheet picks a sheet while a browser session is
-        # already open -- next Start gates on a Ready/Cancel confirmation
-        # instead of silently resuming on the (possibly wrong) channel.
-        self._needs_channel_confirm = False
-
-    def compose(self) -> ComposeResult:
-        lang = self.app.lang
-        with Vertical(id="app-shell"):
-            with Horizontal(id="topbar"):
-                yield Static(t(lang, "app_title"), id="title")
-                yield Static("", id="status-pill", classes="status-idle")
-                yield Static("", id="sheet-badge")
-            with Horizontal(id="stats-row"):
-                yield Static(self._stat(t(lang, "stat_logged"), "0"), id="stat-users", classes="stat-card")
-                yield Static(self._threshold_stat_markup(), id="stat-threshold", classes="stat-card")
-                yield Static(self._stat(t(lang, "stat_poll"), f"{core.CHECK_INTERVAL_SECONDS}s"), id="stat-interval", classes="stat-card")
-                yield Static(self._stat(t(lang, "stat_uptime"), "00:00"), id="stat-uptime", classes="stat-card")
-            with Horizontal(id="controls"):
-                yield Button(t(lang, "start_btn"), id="start-btn", variant="success")
-                yield Button(t(lang, "stop_btn"), id="stop-btn", variant="error", disabled=True)
-                yield Button(t(lang, "switch_sheet_btn"), id="switch-btn")
-                yield Button(t(lang, "threshold_btn"), id="threshold-btn")
-                yield Button(t(lang, "lang_btn"), id="lang-btn")
-                yield Button(t(lang, "quit_btn"), id="quit-btn")
-            with Vertical(id="table-wrap"):
-                yield DataTable(id="table")
-            with Vertical(id="log-panel"):
-                yield RichLog(id="log", wrap=True, markup=True, highlight=False)
-        yield Footer()
-
-    @staticmethod
-    def _stat(label: str, value: str) -> str:
-        return f"[dim]{label}[/dim]\n[bold]{value}[/bold]"
-
-    def _threshold_stat_markup(self) -> str:
-        lang = self.app.lang
-        return self._stat(t(lang, "stat_threshold"), f"Lv {self.app.threshold}+")
-
-    def on_mount(self) -> None:
-        lang = self.app.lang
-        self.query_one("#sheet-badge", Static).update(f"{self.app.sheet_name}")
-        self._set_status("idle")
-        table = self.query_one("#table", DataTable)
-        self._column_keys = table.add_columns(
-            t(lang, "col_time"),
-            t(lang, "col_username"),
-            t(lang, "col_level"),
-            t(lang, "col_row"),
-            t(lang, "col_link"),
-        )
-        table.cursor_type = "row"
-        table.zebra_stripes = True
-        self._uptime_timer = self.set_interval(1, self._tick_uptime, pause=True)
-
-    def _set_status(self, state: str) -> None:
-        self._status_state = state
-        lang = self.app.lang
-        pill = self.query_one("#status-pill", Static)
-        pill.remove_class("status-idle", "status-live", "status-busy")
-        if state == "live":
-            pill.update(t(lang, "status_live"))
-            pill.add_class("status-live")
-        elif state == "busy":
-            pill.update(t(lang, "status_busy"))
-            pill.add_class("status-busy")
-        else:
-            pill.update(t(lang, "status_idle"))
-            pill.add_class("status-idle")
-
-    def _tick_uptime(self) -> None:
-        if not self.start_time:
-            return
-        elapsed = int(time.time() - self.start_time)
-        mm, ss = divmod(elapsed, 60)
-        self.query_one("#stat-uptime", Static).update(
-            self._stat(t(self.app.lang, "stat_uptime"), f"{mm:02d}:{ss:02d}")
-        )
-
-    def append_log(self, line: str) -> None:
-        self.query_one("#log", RichLog).write(line)
-
-    # ---------------- button / key actions ----------------
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "start-btn":
-            self.action_start()
-        elif event.button.id == "stop-btn":
-            self.action_stop()
-        elif event.button.id == "switch-btn":
-            self.action_switch_sheet()
-        elif event.button.id == "threshold-btn":
-            self.action_edit_threshold()
-        elif event.button.id == "lang-btn":
-            self.action_toggle_lang()
-        elif event.button.id == "quit-btn":
-            self.action_quit_app()
-
-    def action_toggle_lang(self) -> None:
-        self.app.lang = "zh" if self.app.lang == "en" else "en"
-        self._refresh_language()
-
-    def _refresh_language(self) -> None:
-        lang = self.app.lang
-
-        self.query_one("#title", Static).update(t(lang, "app_title"))
-        self.query_one("#stat-users", Static).update(
-            self._stat(t(lang, "stat_logged"), str(self.logged_count))
-        )
-        self.query_one("#stat-threshold", Static).update(self._threshold_stat_markup())
-        self.query_one("#stat-interval", Static).update(
-            self._stat(t(lang, "stat_poll"), f"{core.CHECK_INTERVAL_SECONDS}s")
-        )
-        if self.start_time:
-            elapsed = int(time.time() - self.start_time)
-            mm, ss = divmod(elapsed, 60)
-            uptime_value = f"{mm:02d}:{ss:02d}"
-        else:
-            uptime_value = "00:00"
-        self.query_one("#stat-uptime", Static).update(
-            self._stat(t(lang, "stat_uptime"), uptime_value)
-        )
-
-        self.query_one("#start-btn", Button).label = t(lang, "start_btn")
-        self.query_one("#stop-btn", Button).label = t(lang, "stop_btn")
-        self.query_one("#switch-btn", Button).label = t(lang, "switch_sheet_btn")
-        self.query_one("#threshold-btn", Button).label = t(lang, "threshold_btn")
-        self.query_one("#lang-btn", Button).label = t(lang, "lang_btn")
-        self.query_one("#quit-btn", Button).label = t(lang, "quit_btn")
-
-        self._set_status(self._status_state)
-
-        if self._column_keys:
-            table = self.query_one("#table", DataTable)
-            new_labels = [
-                t(lang, "col_time"),
-                t(lang, "col_username"),
-                t(lang, "col_level"),
-                t(lang, "col_row"),
-                t(lang, "col_link"),
-            ]
-            for key, label in zip(self._column_keys, new_labels):
-                column = table.columns[key]
-                label_text = Text.from_markup(label)
-                column.label = label_text
-                content_width = measure(table.app.console, label_text, 1)
-                column.content_width = content_width
-                if column.auto_width:
-                    column.width = content_width
-            table._require_update_dimensions = True
-            table.refresh()
-
-    def action_start(self) -> None:
-        if self.monitoring:
-            return
-        self.query_one("#start-btn", Button).disabled = True
-        self.query_one("#switch-btn", Button).disabled = True
-        self._set_status("busy")
-        if DEMO:
-            self._begin_monitoring()
-        else:
-            self._old_stdout = sys.stdout
-            sys.stdout = _LineForwarder(lambda line: self.app.call_from_thread(self.append_log, line))
-            if self.driver is None:
-                # No browser session yet -- open one, then gate on the
-                # initial manual-login Ready/Cancel modal.
-                self._launch_browser()
-            elif self._needs_channel_confirm:
-                # Sheet was switched since the browser was last used -- make
-                # sure the user has navigated to the right channel before
-                # counting starts on the new sheet.
-                self._show_channel_confirm_modal()
-            else:
-                # Browser session already open and still pointed at the right
-                # channel -- reuse it instead of opening another window.
-                self._begin_monitoring()
-
-    @work(thread=True)
-    def _launch_browser(self) -> None:
-        try:
-            driver = core.start_browser()
-            self.app.call_from_thread(self._show_login_modal, driver)
-        except Exception as e:
-            self.app.call_from_thread(
-                self._on_fatal_error,
-                t(self.app.lang, "browser_start_failed", error=e),
-            )
-
-    def _show_login_modal(self, driver) -> None:
-        self.driver = driver
-        lang = self.app.lang
-        self.app.push_screen(
-            ReadyModal(
-                t(lang, "login_title"),
-                t(lang, "login_body"),
-                on_confirm=self._begin_monitoring,
-                on_cancel=self._cancel_launch,
-            )
-        )
-
-    def _cancel_launch(self) -> None:
-        if self.driver:
-            try:
-                self.driver.quit()
-            except Exception:
-                pass
-            self.driver = None
-        self._restore_stdout()
-        self.query_one("#start-btn", Button).disabled = False
-        self.query_one("#switch-btn", Button).disabled = False
-        self._set_status("idle")
-
-    def _show_channel_confirm_modal(self) -> None:
-        lang = self.app.lang
-        sheet_name = self.app.sheet_name
-        self.app.push_screen(
-            ReadyModal(
-                t(lang, "switch_navigate_title", sheet=sheet_name),
-                t(lang, "switch_navigate_body", sheet=sheet_name),
-                on_confirm=self._confirm_channel_and_begin,
-                on_cancel=self._cancel_channel_confirm,
-            )
-        )
-
-    def _confirm_channel_and_begin(self) -> None:
-        self._needs_channel_confirm = False
-        self._begin_monitoring()
-
-    def _cancel_channel_confirm(self) -> None:
-        # Leave _needs_channel_confirm set so the next Start asks again --
-        # only Ready clears it. Just abort this Start attempt.
-        self._restore_stdout()
-        self.query_one("#start-btn", Button).disabled = False
-        self.query_one("#switch-btn", Button).disabled = False
-        self._set_status("idle")
-
-    def _begin_monitoring(self) -> None:
-        self.monitoring = True
-        self.stop_event = threading.Event()
-        self.start_time = time.time()
-        self.logged_count = 0
-        self._uptime_timer.resume()
-        self._set_status("live")
-        self.query_one("#stop-btn", Button).disabled = False
-        self.query_one("#stat-users", Static).update(self._stat("Logged", "0"))
-        if DEMO:
-            self._run_demo_loop(self.stop_event)
-        else:
-            self._run_monitor_loop(self.driver, self.app.worksheet, self.stop_event)
-
-    @work(thread=True)
-    def _run_monitor_loop(self, driver, sheet, stop_event: threading.Event) -> None:
-        try:
-            logged_state, next_row = core.load_sheet_state(sheet)
-            pending_link_fixups = {}
-            while not stop_event.is_set():
-                # Re-read each cycle (mirrors stop_event.is_set() above) so a
-                # threshold change from the Threshold modal applies to the very
-                # next poll without needing a restart.
-                threshold = self.app.threshold
-                try:
-                    rows = driver.find_elements(core.By.CSS_SELECTOR, core.USER_ROW_SELECTOR)
-                    for row in rows:
-                        if stop_event.is_set():
-                            break
-                        try:
-                            username = row.find_element(
-                                core.By.CSS_SELECTOR, core.USERNAME_SELECTOR
-                            ).text.strip()
-                            level_digits = "".join(
-                                filter(
-                                    str.isdigit,
-                                    row.find_element(core.By.CSS_SELECTOR, core.LEVEL_SELECTOR).text.strip(),
-                                )
-                            )
-                            if not level_digits:
-                                continue
-                            level = int(level_digits)
-
-                            action = core.decide_action(logged_state, username, level, threshold=threshold)
-
-                            if action == "new":
-                                profile_link = core.get_profile_link_via_popup(driver, row, username)
-                                next_row = core.apply_new_user(
-                                    sheet, logged_state, next_row, username, level, profile_link
-                                )
-                                new_row = next_row - 1
-                                self.app.call_from_thread(
-                                    self._on_new_user, username, level, profile_link, new_row
-                                )
-                                if not profile_link:
-                                    pending_link_fixups[username] = (new_row, 0)
-
-                            elif action == "update":
-                                # Stripchat lets you self-adjust your level past 99, so a
-                                # relog at a strictly higher level replaces the old row
-                                # instead of being skipped like a same/lower-level repeat.
-                                profile_link = core.get_profile_link_via_popup(driver, row, username)
-                                old_row = logged_state[username]["row"]
-                                next_row = core.apply_update_user(
-                                    sheet, logged_state, next_row, username, level, profile_link
-                                )
-                                new_row = next_row - 1
-                                # Keep pending fixups pointed at the right row now that
-                                # everything below the deleted row shifted up by one.
-                                for uname, (row_number, cycles_tried) in list(pending_link_fixups.items()):
-                                    if row_number > old_row:
-                                        pending_link_fixups[uname] = (row_number - 1, cycles_tried)
-                                pending_link_fixups.pop(username, None)
-                                self.app.call_from_thread(
-                                    self._on_row_replaced, username, level, profile_link, old_row, new_row
-                                )
-
-                            elif username in pending_link_fixups:
-                                row_number, cycles_tried = pending_link_fixups[username]
-                                profile_link = core.get_profile_link_via_popup(driver, row, username)
-                                if profile_link:
-                                    sheet.update(range_name=f"E{row_number}", values=[[profile_link]])
-                                    del pending_link_fixups[username]
-                                else:
-                                    cycles_tried += 1
-                                    if cycles_tried >= core.LINK_FIXUP_MAX_CYCLES:
-                                        del pending_link_fixups[username]
-                                    else:
-                                        pending_link_fixups[username] = (row_number, cycles_tried)
-                        except Exception:
-                            continue
-                except Exception as e:
-                    print(f"Page structure issue, retrying: {e}")
-
-                stop_event.wait(core.CHECK_INTERVAL_SECONDS)
-        finally:
-            # Deliberately not quitting the driver here -- the browser session
-            # stays open across Stop so the next Start reuses it (see
-            # action_start). It's only closed on app Quit.
-            self.app.call_from_thread(self._on_monitoring_stopped)
-
-    @work(thread=True)
-    def _run_demo_loop(self, stop_event: threading.Event) -> None:
-        row = 2
-        while not stop_event.is_set():
-            wait = random.uniform(2, 4.5)
-            if stop_event.wait(wait):
-                break
-            username = _demo_username()
-            level = random.randint(self.app.threshold, self.app.threshold + 40)
-            link = f"https://stripchat.com/{username}"
-            self.app.call_from_thread(self._on_new_user, username, level, link, row)
-            row += 1
-        self.app.call_from_thread(self._on_monitoring_stopped)
-
-    def _append_table_row(self, table: DataTable, timestamp: str, username: str, level: int, row_number: int, link: str) -> None:
-        lang = self.app.lang
-        link_cell = f"[link={link}]{t(lang, 'link_open')}[/link]" if link else "[dim]—[/dim]"
-        table.add_row(timestamp, username, str(level), str(row_number), link_cell)
-
-    def _on_new_user(self, username: str, level: int, link: str, row_number: int) -> None:
-        lang = self.app.lang
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        rows = self._sheet_rows.setdefault(self.app.sheet_name, {})
-        rows[username] = {"timestamp": timestamp, "level": level, "row": row_number, "link": link}
-        table = self.query_one("#table", DataTable)
-        self._append_table_row(table, timestamp, username, level, row_number, link)
-        table.move_cursor(row=table.row_count - 1)
-        self.logged_count += 1
-        self.query_one("#stat-users", Static).update(
-            self._stat(t(lang, "stat_logged"), str(self.logged_count))
-        )
-
-    def _on_row_replaced(self, username: str, level: int, link: str, old_row: int, new_row: int) -> None:
-        """A repeat sighting climbed to a strictly higher level -- the old sheet
-        row was deleted and everything below it shifted up by one, so mirror
-        that in the cached table state before redrawing (see apply_update_user)."""
-        lang = self.app.lang
-        sheet_name = self.app.sheet_name
-        rows = self._sheet_rows.setdefault(sheet_name, {})
-        rows.pop(username, None)
-        for info in rows.values():
-            if info["row"] > old_row:
-                info["row"] -= 1
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        rows[username] = {"timestamp": timestamp, "level": level, "row": new_row, "link": link}
-        self._redraw_table_for_sheet(sheet_name)
-        self.query_one("#stat-users", Static).update(
-            self._stat(t(lang, "stat_logged"), str(self.logged_count))
-        )
-
-    def _redraw_table_for_sheet(self, sheet_name: str) -> None:
-        lang = self.app.lang
-        table = self.query_one("#table", DataTable)
-        table.clear()
-        rows = self._sheet_rows.get(sheet_name, {})
-        for username, info in sorted(rows.items(), key=lambda item: item[1]["row"]):
-            self._append_table_row(
-                table, info["timestamp"], username, info["level"], info["row"], info["link"]
-            )
-        if table.row_count:
-            table.move_cursor(row=table.row_count - 1)
-        self.logged_count = len(rows)
-        self.query_one("#stat-users", Static).update(
-            self._stat(t(lang, "stat_logged"), str(self.logged_count))
-        )
-
-    def action_stop(self) -> None:
-        if not self.monitoring or not self.stop_event:
-            return
-        self.stop_event.set()
-        self.query_one("#stop-btn", Button).disabled = True
-        self._set_status("busy")
-
-    def _on_monitoring_stopped(self) -> None:
-        self.monitoring = False
-        # Deliberately keep self.driver around -- the browser session persists
-        # across Stop so the next Start can reuse it (see action_start).
-        self.start_time = None
-        self._uptime_timer.pause()
-        self._restore_stdout()
-        self._set_status("idle")
-        self.query_one("#start-btn", Button).disabled = False
-        self.query_one("#stop-btn", Button).disabled = True
-        self.query_one("#switch-btn", Button).disabled = False
-        if self._quit_after_stop:
-            self._quit_driver_and_exit()
-
-    def _restore_stdout(self) -> None:
-        if self._old_stdout is not None:
-            sys.stdout = self._old_stdout
-            self._old_stdout = None
-
-    def _on_fatal_error(self, message: str) -> None:
-        self._restore_stdout()
-        self.query_one("#start-btn", Button).disabled = False
-        self.query_one("#switch-btn", Button).disabled = False
-        self._set_status("idle")
-        self.app.notify(message, title=t(self.app.lang, "error_title"), severity="error", timeout=10)
-
-    def action_toggle_log(self) -> None:
-        panel = self.query_one("#log-panel")
-        panel.toggle_class("visible")
-
-    def action_edit_threshold(self) -> None:
-        self.app.push_screen(ThresholdModal(), self._on_threshold_picked)
-
-    def _on_threshold_picked(self, value) -> None:
-        if value is None:
-            return  # picker was cancelled -- leave the current threshold as-is
-        self.app.threshold = value
-        self.query_one("#stat-threshold", Static).update(self._threshold_stat_markup())
-
-    def action_switch_sheet(self) -> None:
-        # Only reachable before Start / after Stop -- the button is disabled
-        # while monitoring is live, this is just a safety net.
-        if self.monitoring:
-            return
-        self.app.push_screen(SwitchSheetModal(), self._on_switch_sheet_picked)
-
-    def _on_switch_sheet_picked(self, sheet_name) -> None:
-        if not sheet_name:
-            return  # picker was cancelled -- leave the current sheet as-is
-        worksheet = None if DEMO else self.app.spreadsheet.worksheet(sheet_name)
-        self._commit_sheet_switch(sheet_name, worksheet)
-        if self.driver is not None:
-            # A browser session is already open, pointed at whatever channel
-            # matched the old sheet -- don't let Start silently begin
-            # counting against the new sheet until the user has manually
-            # navigated to the right channel and confirmed via Start's
-            # Ready/Cancel gate (see action_start).
-            self._needs_channel_confirm = True
-
-    def _commit_sheet_switch(self, sheet_name: str, worksheet) -> None:
-        self.app.worksheet = worksheet
-        self.app.sheet_name = sheet_name
-        self.query_one("#sheet-badge", Static).update(sheet_name)
-        # Swap the visible table for this sheet's cached rows (empty if it
-        # hasn't been visited yet this session) without losing the other
-        # sheets' data -- switching back later restores it.
-        self._redraw_table_for_sheet(sheet_name)
-
-    def action_quit_app(self) -> None:
-        if self.monitoring:
-
-            def handle_result(confirmed) -> None:
-                if confirmed:
-                    self._quit_after_stop = True
-                    self.action_stop()
-
-            self.app.push_screen(
-                ConfirmModal(t(self.app.lang, "quit_confirm")), handle_result
-            )
-        else:
-            self._quit_driver_and_exit()
-
-    def _quit_driver_and_exit(self) -> None:
-        if self.driver:
-            try:
-                self.driver.quit()
-            except Exception:
-                pass
-            self.driver = None
-        self.app.exit()
-
-
-# --------------------------------------------------------------------------
-# App
-# --------------------------------------------------------------------------
-class TrackerApp(App):
-    CSS_PATH = "dashboard.tcss"
-    TITLE = "Stripchat Tracker"
-    ENABLE_COMMAND_PALETTE = False
-
-    def __init__(self):
-        super().__init__()
-        self.lang = "en"
+        self.lock = threading.RLock()
         self.spreadsheet = None
         self.worksheet = None
         self.sheet_name = ""
         self.threshold = core.LEVEL_THRESHOLD
+        self.driver = None
+        self.stop_event = None
+        self.monitoring = False
+        self.starting = False
+        self.stopping = False
+        self.needs_channel_confirm = False
+        self.start_time = None
+        self.quit_after_stop = False
+        self.logged_count = 0
+        # [{"id", "username", "level", "link", "timestamp"}, ...], newest last
+        self.log_entries = []
+        self.log_next_id = 1
+        # None, or {"type": "ready_login"|"ready_switch"|"browser_error", ...}
+        self.pending_prompt = None
 
-    def on_mount(self) -> None:
-        self.push_screen(LanguageScreen())
+
+state = AppState()
+
+app = Flask(__name__)
+
+
+def _append_log_entry(username: str, level: int, link: str) -> None:
+    """Record one simple activity-log entry: timestamp, name, level, link.
+    This is the dashboard's only user-facing log -- deliberately not a dump
+    of core's print() diagnostics (those still go to the real terminal, same
+    as before, just no longer mirrored into the browser)."""
+    entry = {
+        "id": None,
+        "username": username,
+        "level": level,
+        "link": link or "",
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    with state.lock:
+        entry["id"] = state.log_next_id
+        state.log_next_id += 1
+        state.log_entries.append(entry)
+        if len(state.log_entries) > MAX_LOG_LINES:
+            state.log_entries = state.log_entries[-MAX_LOG_LINES:]
+
+
+# --------------------------------------------------------------------------
+# Pages
+# --------------------------------------------------------------------------
+@app.route("/")
+def index():
+    return render_template(
+        "index.html",
+        strings=STRINGS,
+        demo=DEMO,
+        threshold=core.LEVEL_THRESHOLD,
+        poll_interval=core.CHECK_INTERVAL_SECONDS,
+    )
+
+
+# --------------------------------------------------------------------------
+# REST: connect / sheet selection
+# --------------------------------------------------------------------------
+@app.route("/api/connect", methods=["POST"])
+def api_connect():
+    if DEMO:
+        time.sleep(0.6)
+        return jsonify(ok=True, sheets=["Demo Sheet A", "Demo Sheet B", "Test"])
+    try:
+        scope = [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds = core.ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+        client = core.gspread.authorize(creds)
+        spreadsheet = client.open(core.SHEET_NAME)
+        names = [ws.title for ws in spreadsheet.worksheets()]
+        with state.lock:
+            state.spreadsheet = spreadsheet
+        return jsonify(ok=True, sheets=names)
+    except Exception as e:
+        return jsonify(ok=False, error=str(e))
+
+
+@app.route("/api/sheets")
+def api_sheets():
+    if DEMO:
+        return jsonify(ok=True, sheets=["Demo Sheet A", "Demo Sheet B", "Test"])
+    with state.lock:
+        spreadsheet = state.spreadsheet
+    if spreadsheet is None:
+        return jsonify(ok=False, error="not connected"), 400
+    names = [ws.title for ws in spreadsheet.worksheets()]
+    return jsonify(ok=True, sheets=names)
+
+
+@app.route("/api/select-sheet", methods=["POST"])
+def api_select_sheet():
+    data = request.get_json(force=True) or {}
+    sheet_name = str(data.get("sheet_name", ""))
+    with state.lock:
+        state.worksheet = None if DEMO else state.spreadsheet.worksheet(sheet_name)
+        state.sheet_name = sheet_name
+    return jsonify(ok=True)
+
+
+@app.route("/api/switch-sheet", methods=["POST"])
+def api_switch_sheet():
+    data = request.get_json(force=True) or {}
+    sheet_name = str(data.get("sheet_name", ""))
+    with state.lock:
+        if state.monitoring:
+            return jsonify(ok=False, error="monitoring")
+        state.worksheet = None if DEMO else state.spreadsheet.worksheet(sheet_name)
+        state.sheet_name = sheet_name
+        # A browser session already open, pointed at whatever channel matched
+        # the old sheet -- don't let Start silently begin counting against
+        # the new sheet until the user confirms via the Ready/Cancel gate.
+        state.needs_channel_confirm = state.driver is not None
+    return jsonify(ok=True)
+
+
+# --------------------------------------------------------------------------
+# REST: start / ready / stop / threshold / quit
+# --------------------------------------------------------------------------
+@app.route("/api/start", methods=["POST"])
+def api_start():
+    with state.lock:
+        if state.monitoring or state.starting:
+            return jsonify(ok=False, error="already running")
+        state.starting = True
+        driver = state.driver
+        needs_confirm = state.needs_channel_confirm
+    if DEMO:
+        _begin_monitoring()
+    else:
+        if driver is None:
+            threading.Thread(target=_launch_browser, daemon=True).start()
+        elif needs_confirm:
+            with state.lock:
+                state.pending_prompt = {"type": "ready_switch", "sheet_name": state.sheet_name}
+        else:
+            _begin_monitoring()
+    return jsonify(ok=True)
+
+
+def _launch_browser():
+    try:
+        driver = core.start_browser()
+        with state.lock:
+            state.driver = driver
+            state.pending_prompt = {"type": "ready_login"}
+    except Exception as e:
+        with state.lock:
+            state.starting = False
+            state.pending_prompt = {"type": "browser_error", "message": str(e)}
+
+
+@app.route("/api/ready", methods=["POST"])
+def api_ready():
+    data = request.get_json(force=True) or {}
+    kind = data.get("kind")
+    confirm = bool(data.get("confirm"))
+    with state.lock:
+        state.pending_prompt = None
+    if kind == "browser_error":
+        return jsonify(ok=True)
+    if confirm:
+        if kind == "ready_switch":
+            with state.lock:
+                state.needs_channel_confirm = False
+        _begin_monitoring()
+    else:
+        if kind == "ready_login":
+            with state.lock:
+                driver = state.driver
+                state.driver = None
+                state.starting = False
+            if driver:
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
+        else:
+            # Cancelling the "navigate to the right channel" gate: leave
+            # needs_channel_confirm set so the next Start asks again -- only
+            # a confirm clears it.
+            with state.lock:
+                state.starting = False
+    return jsonify(ok=True)
+
+
+def _begin_monitoring():
+    with state.lock:
+        state.monitoring = True
+        state.starting = False
+        state.stop_event = threading.Event()
+        state.start_time = time.time()
+        state.logged_count = 0
+        stop_event = state.stop_event
+        driver = state.driver
+        sheet = state.worksheet
+    if DEMO:
+        threading.Thread(target=_run_demo_loop, args=(stop_event,), daemon=True).start()
+    else:
+        threading.Thread(target=_run_monitor_loop, args=(driver, sheet, stop_event), daemon=True).start()
+
+
+@app.route("/api/stop", methods=["POST"])
+def api_stop():
+    with state.lock:
+        if not state.monitoring or not state.stop_event:
+            return jsonify(ok=False, error="not monitoring")
+        state.stopping = True
+        state.stop_event.set()
+    return jsonify(ok=True)
+
+
+@app.route("/api/threshold", methods=["POST"])
+def api_threshold():
+    data = request.get_json(force=True) or {}
+    raw = str(data.get("value", "")).strip()
+    if not raw.isdigit() or int(raw) < 1:
+        return jsonify(ok=False, error="invalid")
+    value = int(raw)
+    with state.lock:
+        state.threshold = value
+    return jsonify(ok=True, threshold=value)
+
+
+@app.route("/api/quit", methods=["POST"])
+def api_quit():
+    with state.lock:
+        monitoring = state.monitoring
+        if monitoring:
+            state.quit_after_stop = True
+            state.stopping = True
+            stop_event = state.stop_event
+    if monitoring:
+        if stop_event:
+            stop_event.set()
+    else:
+        threading.Thread(target=_quit_driver_and_exit, daemon=True).start()
+    return jsonify(ok=True)
+
+
+def _close_launcher_terminal():
+    """If launched via run_dashboard.command, that script exports
+    DASHBOARD_TERMINAL_TTY so Quit can close its own Terminal window
+    afterwards. This runs as a fully detached process (new session, no
+    controlling terminal) so it isn't itself counted as "still running" in
+    that window -- otherwise Terminal prompts to confirm terminating it
+    alongside bash. The `delay` inside the script gives bash time to finish
+    exiting first, so by the time it asks Terminal to close the window,
+    nothing is left running there to prompt about."""
+    if sys.platform != "darwin":
+        return
+    tty_path = os.environ.get("DASHBOARD_TERMINAL_TTY")
+    if not tty_path:
+        return
+    script = f'''
+    delay 1
+    tell application "Terminal"
+        repeat with w in windows
+            repeat with t in tabs of w
+                if tty of t is "{tty_path}" then
+                    close w
+                end if
+            end repeat
+        end repeat
+    end tell
+    '''
+    try:
+        subprocess.Popen(
+            ["osascript", "-e", script],
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
+
+
+def _quit_driver_and_exit():
+    with state.lock:
+        driver = state.driver
+        state.driver = None
+    if driver:
+        try:
+            driver.quit()
+        except Exception:
+            pass
+    _close_launcher_terminal()
+    time.sleep(0.3)  # let the HTTP response reach the browser before the process dies
+    os._exit(0)
+
+
+# --------------------------------------------------------------------------
+# REST: the one endpoint the dashboard screen polls for everything live
+# --------------------------------------------------------------------------
+@app.route("/api/poll")
+def api_poll():
+    since = request.args.get("since", default=0, type=int)
+    with state.lock:
+        if state.monitoring and not state.stopping:
+            status = "live"
+        elif state.starting or state.stopping:
+            status = "busy"
+        else:
+            status = "idle"
+        new_entries = [entry for entry in state.log_entries if entry["id"] > since]
+        next_since = state.log_entries[-1]["id"] if state.log_entries else since
+        payload = dict(
+            state=status,
+            start_time=state.start_time,
+            sheet_name=state.sheet_name,
+            threshold=state.threshold,
+            logged_count=state.logged_count,
+            demo=DEMO,
+            monitoring=state.monitoring,
+            prompt=state.pending_prompt,
+            log=new_entries,
+            next_since=next_since,
+        )
+    return jsonify(payload)
+
+
+# --------------------------------------------------------------------------
+# Monitor loops (background threads)
+# --------------------------------------------------------------------------
+def _record_new_user():
+    with state.lock:
+        state.logged_count += 1
+
+
+def _on_monitoring_stopped():
+    with state.lock:
+        state.monitoring = False
+        state.stopping = False
+        # Deliberately keep state.driver around -- the browser session
+        # persists across Stop so the next Start can reuse it.
+        state.start_time = None
+        quit_after_stop = state.quit_after_stop
+    if quit_after_stop:
+        _quit_driver_and_exit()
+
+
+def _run_monitor_loop(driver, sheet, stop_event: threading.Event) -> None:
+    try:
+        logged_state, next_row = core.load_sheet_state(sheet)
+        pending_link_fixups = {}
+        while not stop_event.is_set():
+            # Re-read each cycle so a threshold change from the Threshold
+            # modal applies to the very next poll without needing a restart.
+            threshold = state.threshold
+            try:
+                rows = driver.find_elements(core.By.CSS_SELECTOR, core.USER_ROW_SELECTOR)
+                for row in rows:
+                    if stop_event.is_set():
+                        break
+                    try:
+                        username = row.find_element(core.By.CSS_SELECTOR, core.USERNAME_SELECTOR).text.strip()
+                        level_digits = "".join(
+                            filter(
+                                str.isdigit,
+                                row.find_element(core.By.CSS_SELECTOR, core.LEVEL_SELECTOR).text.strip(),
+                            )
+                        )
+                        if not level_digits:
+                            continue
+                        level = int(level_digits)
+
+                        action = core.decide_action(logged_state, username, level, threshold=threshold)
+
+                        if action == "new":
+                            profile_link = core.get_profile_link_via_popup(driver, row, username)
+                            next_row = core.apply_new_user(
+                                sheet, logged_state, next_row, username, level, profile_link
+                            )
+                            new_row = next_row - 1
+                            _record_new_user()
+                            _append_log_entry(username, level, profile_link)
+                            if not profile_link:
+                                pending_link_fixups[username] = (new_row, 0)
+
+                        elif action == "update":
+                            profile_link = core.get_profile_link_via_popup(driver, row, username)
+                            old_row = logged_state[username]["row"]
+                            next_row = core.apply_update_user(
+                                sheet, logged_state, next_row, username, level, profile_link
+                            )
+                            _append_log_entry(username, level, profile_link)
+                            for uname, (row_number, cycles_tried) in list(pending_link_fixups.items()):
+                                if row_number > old_row:
+                                    pending_link_fixups[uname] = (row_number - 1, cycles_tried)
+                            pending_link_fixups.pop(username, None)
+
+                        elif username in pending_link_fixups:
+                            row_number, cycles_tried = pending_link_fixups[username]
+                            profile_link = core.get_profile_link_via_popup(driver, row, username)
+                            if profile_link:
+                                sheet.update(range_name=f"E{row_number}", values=[[profile_link]])
+                                del pending_link_fixups[username]
+                            else:
+                                cycles_tried += 1
+                                if cycles_tried >= core.LINK_FIXUP_MAX_CYCLES:
+                                    del pending_link_fixups[username]
+                                else:
+                                    pending_link_fixups[username] = (row_number, cycles_tried)
+                    except Exception:
+                        continue
+            except Exception as e:
+                print(f"Page structure issue, retrying: {e}")
+
+            stop_event.wait(core.CHECK_INTERVAL_SECONDS)
+    finally:
+        # Deliberately not quitting the driver here -- the browser session
+        # stays open across Stop so the next Start reuses it. It's only
+        # closed on app Quit.
+        _on_monitoring_stopped()
+
+
+def _run_demo_loop(stop_event: threading.Event) -> None:
+    while not stop_event.is_set():
+        wait = random.uniform(2, 4.5)
+        if stop_event.wait(wait):
+            break
+        username = _demo_username()
+        level = random.randint(state.threshold, state.threshold + 40)
+        link = f"https://stripchat.com/{username}"
+        _append_log_entry(username, level, link)
+        with state.lock:
+            state.logged_count += 1
+    _on_monitoring_stopped()
 
 
 if __name__ == "__main__":
-    TrackerApp().run()
+    threading.Timer(0.75, lambda: webbrowser.open(f"http://{HOST}:{PORT}")).start()
+    app.run(host=HOST, port=PORT, debug=False, use_reloader=False)
