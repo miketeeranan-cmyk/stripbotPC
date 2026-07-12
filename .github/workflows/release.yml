@@ -21,43 +21,58 @@ jobs:
         # runner fleet -- jobs requesting it now queue forever instead of
         # failing outright. macos-latest is Apple Silicon (arm64), which
         # won't run on the operator's Intel Mac at all, so the mac leg
-        # builds x86_64 Python under Rosetta 2 (setup-python's
-        # architecture: x64 on an arm64 runner) to produce a genuine x86_64
-        # binary instead. Switch back to a plain macos-13 pin if GitHub ever
+        # installs python.org's official universal2 build (both arm64 and
+        # x86_64 slices in one binary, standard since 3.9.1) and forces the
+        # x86_64 slice via `arch -x86_64`, which macOS runs under Rosetta 2.
+        # setup-python's architecture: x64 does NOT work for this -- its mac
+        # manifest doesn't reliably have x64-only 3.12 builds, and it
+        # silently falls back to the runner's native arm64 python instead of
+        # erroring. Switch back to a plain macos-13 pin if GitHub ever
         # brings Intel hosted runners back.
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rosetta 2 (mac only, for x86_64 Python)
+      - name: Determine python invocation
+        id: py
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            echo "bin=arch -x86_64 /Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12" >> "$GITHUB_OUTPUT"
+          else
+            echo "bin=python" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Rosetta 2 + universal2 Python (mac only)
         if: runner.os == 'macOS'
-        run: softwareupdate --install-rosetta --agree-to-license
+        run: |
+          softwareupdate --install-rosetta --agree-to-license
+          curl -fsSL -o python.pkg https://www.python.org/ftp/python/3.12.7/python-3.12.7-macos11.pkg
+          sudo installer -pkg python.pkg -target /
+          rm python.pkg
+          ${{ steps.py.outputs.bin }} -c "import platform; assert platform.machine() == 'x86_64', platform.machine()"
 
       - uses: actions/setup-python@v5
+        if: runner.os != 'macOS'
         with:
           python-version: "3.12"
-          architecture: x64
 
       - name: Install dependencies
-        run: pip install -r requirements.txt -r requirements-build.txt
-
-      - name: Verify mac Python is x86_64
-        if: runner.os == 'macOS'
-        run: python -c "import platform; assert platform.machine() == 'x86_64', platform.machine()"
+        run: ${{ steps.py.outputs.bin }} -m pip install -r requirements.txt -r requirements-build.txt
 
       # Build + package one target at a time -- PyInstaller's --clean can
       # wipe dist/'s other target, so don't build both before packaging
       # either.
       - name: Build + package core app
         run: |
-          python packaging/build.py --core
-          python packaging/package_release.py --core
+          ${{ steps.py.outputs.bin }} packaging/build.py --core
+          ${{ steps.py.outputs.bin }} packaging/package_release.py --core
 
       - name: Build + package launcher
         run: |
-          python packaging/build.py --launcher
-          python packaging/package_release.py --launcher
+          ${{ steps.py.outputs.bin }} packaging/build.py --launcher
+          ${{ steps.py.outputs.bin }} packaging/package_release.py --launcher
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
