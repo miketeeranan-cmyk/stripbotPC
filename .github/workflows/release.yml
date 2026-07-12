@@ -20,11 +20,19 @@ jobs:
         # macos-13 (the last Intel-hosted macOS image) is gone from GitHub's
         # runner fleet -- jobs requesting it now queue forever instead of
         # failing outright. macos-latest is Apple Silicon (arm64), which
-        # won't run on the operator's Intel Mac at all, so the mac leg
-        # installs python.org's official universal2 build (both arm64 and
-        # x86_64 slices in one binary, standard since 3.9.1) and forces the
-        # x86_64 slice via `arch -x86_64`, which macOS runs under Rosetta 2.
-        # setup-python's architecture: x64 does NOT work for this -- its mac
+        # won't run on the operator's Intel Mac at all, so the mac leg needs
+        # a genuine x86_64 Python. A universal2 build (e.g. python.org's
+        # installer) does NOT work for this: pip's wheel-tag resolution
+        # looks at the interpreter's declared "universal2" platform rather
+        # than which slice is actually executing under Rosetta, so it can
+        # silently pick an arm64-only wheel (confirmed: it did, for
+        # cryptography's compiled extension, breaking the PyInstaller
+        # build with IncompatibleBinaryArchError). Using the x86_64-side
+        # Homebrew that GitHub's arm64 runner images ship pre-installed at
+        # /usr/local (separate from the native arm64 one at /opt/homebrew)
+        # avoids the ambiguity entirely -- its python@3.12 bottle is
+        # single-arch x86_64, so pip can't see arm64 wheels at all.
+        # setup-python's architecture: x64 also doesn't work here -- its mac
         # manifest doesn't reliably have x64-only 3.12 builds, and it
         # silently falls back to the runner's native arm64 python instead of
         # erroring. Switch back to a plain macos-13 pin if GitHub ever
@@ -39,18 +47,16 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then
-            echo "bin=arch -x86_64 /Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12" >> "$GITHUB_OUTPUT"
+            echo "bin=arch -x86_64 /usr/local/bin/python3.12" >> "$GITHUB_OUTPUT"
           else
             echo "bin=python" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Install Rosetta 2 + universal2 Python (mac only)
+      - name: Install Rosetta 2 + x86_64 Homebrew Python (mac only)
         if: runner.os == 'macOS'
         run: |
           softwareupdate --install-rosetta --agree-to-license
-          curl -fsSL -o python.pkg https://www.python.org/ftp/python/3.12.7/python-3.12.7-macos11.pkg
-          sudo installer -pkg python.pkg -target /
-          rm python.pkg
+          arch -x86_64 /usr/local/bin/brew install python@3.12
           ${{ steps.py.outputs.bin }} -c "import platform; assert platform.machine() == 'x86_64', platform.machine()"
 
       - uses: actions/setup-python@v5
