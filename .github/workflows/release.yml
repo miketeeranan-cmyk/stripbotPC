@@ -17,21 +17,34 @@ jobs:
   build:
     strategy:
       matrix:
-        # macos-13 = Intel (x86_64) runner -- macos-latest/macos-14+ default
-        # to Apple Silicon (arm64), which won't run on an Intel Mac at all.
-        # Pinned to match the actual operator hardware; switch back to
-        # macos-latest (or add both) if that ever changes.
-        os: [macos-13, windows-latest]
+        # macos-13 (the last Intel-hosted macOS image) is gone from GitHub's
+        # runner fleet -- jobs requesting it now queue forever instead of
+        # failing outright. macos-latest is Apple Silicon (arm64), which
+        # won't run on the operator's Intel Mac at all, so the mac leg
+        # builds x86_64 Python under Rosetta 2 (setup-python's
+        # architecture: x64 on an arm64 runner) to produce a genuine x86_64
+        # binary instead. Switch back to a plain macos-13 pin if GitHub ever
+        # brings Intel hosted runners back.
+        os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Rosetta 2 (mac only, for x86_64 Python)
+        if: runner.os == 'macOS'
+        run: softwareupdate --install-rosetta --agree-to-license
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          architecture: x64
 
       - name: Install dependencies
         run: pip install -r requirements.txt -r requirements-build.txt
+
+      - name: Verify mac Python is x86_64
+        if: runner.os == 'macOS'
+        run: python -c "import platform; assert platform.machine() == 'x86_64', platform.machine()"
 
       # Build + package one target at a time -- PyInstaller's --clean can
       # wipe dist/'s other target, so don't build both before packaging
