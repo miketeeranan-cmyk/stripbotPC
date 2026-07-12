@@ -143,6 +143,8 @@ p {
   padding: 2rem;
   width: 100%;
   max-width: 420px;
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
   text-align: center;
 }
 
@@ -155,6 +157,14 @@ p {
   flex-direction: column;
   gap: 0.5rem;
   margin-top: 1.25rem;
+}
+
+#sheet-list,
+#switch-list {
+  max-height: 45vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.25rem;
 }
 
 .option {
@@ -280,6 +290,16 @@ p {
   align-items: center;
   gap: 0.6rem;
   margin-left: auto;
+}
+
+.corner-controls {
+  position: fixed;
+  top: 1rem;
+  right: 1.25rem;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
 }
 
 .chip-btn {
@@ -668,6 +688,10 @@ p {
 }
 
 .modal .card h2 {
+  text-align: center;
+}
+
+#confirm-message {
   text-align: center;
 }
 

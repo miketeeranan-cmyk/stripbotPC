@@ -33,14 +33,16 @@
 
   <section id="screen-dashboard" class="screen hidden">
     <div class="shell">
+      <div class="corner-controls">
+        <button class="chip-btn" id="lang-btn" type="button" data-i18n="lang_btn"></button>
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle theme">🌙</button>
+        <button class="icon-btn icon-btn-error" id="quit-btn" type="button" aria-label="Quit" title="Quit">⏻</button>
+      </div>
       <header class="topbar">
         <h1 data-i18n="app_title"></h1>
         <span class="status-pill status-idle" id="status-pill"></span>
         <div class="topbar-right">
           <span class="sheet-badge" id="sheet-badge"></span>
-          <button class="chip-btn" id="lang-btn" type="button" data-i18n="lang_btn"></button>
-          <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle theme">🌙</button>
-          <button class="icon-btn icon-btn-error" id="quit-btn" type="button" aria-label="Quit" title="Quit">⏻</button>
         </div>
       </header>
 

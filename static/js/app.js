@@ -483,15 +483,12 @@
   });
 
   $("quit-btn").addEventListener("click", () => {
-    if (monitoring) {
-      showConfirmModal(t(lang, "quit_confirm"), () => {
-        stopPolling();
-        fetch("/api/quit", { method: "POST" });
-      });
-    } else {
+    const message = monitoring ? t(lang, "quit_confirm") : t(lang, "quit_confirm_idle");
+    showConfirmModal(message, () => {
       stopPolling();
       fetch("/api/quit", { method: "POST" });
-    }
+      window.close();
+    });
   });
 
   // ---------------- init ----------------

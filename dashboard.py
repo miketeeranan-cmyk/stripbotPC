@@ -72,6 +72,7 @@ STRINGS = {
         "en": "Monitoring is running. Stop it and quit?",
         "zh": "监控正在运行。要停止并退出吗？",
     },
+    "quit_confirm_idle": {"en": "Quit the dashboard?", "zh": "要退出仪表盘吗？"},
     "start_btn": {"en": "Start", "zh": "开始"},
     "stop_btn": {"en": "Stop", "zh": "停止"},
     "switch_sheet_btn": {"en": "Switch Sheet", "zh": "切换工作表"},
