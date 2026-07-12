@@ -23,6 +23,12 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_SEP = ";" if sys.platform == "win32" else ":"
 
+# PyInstaller can't reliably infer the target architecture when the running
+# Python is an x86_64 process under Rosetta 2 on Apple Silicon hardware (our
+# CI runner: arm64 host, x86_64 Python to match the operator's Intel Mac) --
+# it needs to be told explicitly, or the build fails outright.
+TARGET_ARCH_FLAGS = ["--target-architecture=x86_64"] if sys.platform == "darwin" else []
+
 
 def _run(args):
     subprocess.run(args, check=True, cwd=REPO_ROOT)
@@ -40,6 +46,7 @@ def build_core():
             "--onedir",
             "--name",
             "StripTrackerCore",
+            *TARGET_ARCH_FLAGS,
             f"--add-data=templates{DATA_SEP}templates",
             f"--add-data=static{DATA_SEP}static",
             "dashboard.py",
@@ -59,6 +66,7 @@ def build_launcher():
             "--onedir",
             "--name",
             "StripTracker",
+            *TARGET_ARCH_FLAGS,
             "launcher.py",
         ]
     )
