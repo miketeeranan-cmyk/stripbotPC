@@ -707,15 +707,28 @@ def _wait_for_server(timeout=15):
 
 if __name__ == "__main__":
     if WINDOWED:
-        import webview  # only ever imported on the frozen Windows build
+        # --windowed has no console, so any exception here would otherwise
+        # vanish silently (the window just never appears). Log it to
+        # app-data instead so a failure is diagnosable after the fact.
+        try:
+            import webview  # only ever imported on the frozen Windows build
 
-        threading.Thread(target=_serve, daemon=True).start()
-        _wait_for_server()
-        window = webview.create_window("StripTracker", f"http://{HOST}:{PORT}")
-        # *_ tolerates whatever args this pywebview version's closed event passes
-        window.events.closed += lambda *_: _quit_gracefully()
-        webview.start()
-        os._exit(0)  # window closed some other way -- no graceful shutdown, same as Quit
+            threading.Thread(target=_serve, daemon=True).start()
+            _wait_for_server()
+            window = webview.create_window("StripTracker", f"http://{HOST}:{PORT}")
+            # *_ tolerates whatever args this pywebview version's closed event passes
+            window.events.closed += lambda *_: _quit_gracefully()
+            webview.start()
+        except Exception:
+            import traceback
+
+            try:
+                with open(os.path.join(APP_DATA_DIR, "crash.log"), "a") as f:
+                    f.write(f"\n--- {datetime.now().isoformat()} ---\n")
+                    f.write(traceback.format_exc())
+            except Exception:
+                pass
+        os._exit(0)  # no graceful shutdown, same as Quit
     else:
         threading.Thread(
             target=lambda: (_wait_for_server(), webbrowser.open(f"http://{HOST}:{PORT}")),
