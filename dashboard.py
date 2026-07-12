@@ -90,7 +90,18 @@ def _load_or_create_secret_key() -> str:
     return key
 
 
-USERS = _load_users()
+try:
+    USERS = _load_users()
+except SystemExit as e:
+    # A --windowed build has no console, so this message -- which is meant
+    # to be read -- would otherwise vanish with the process. SystemExit
+    # isn't caught by a normal try/except Exception (nor by sys.excepthook),
+    # so it has to be handled right at this call site.
+    if WINDOWED:
+        import ctypes
+
+        ctypes.windll.user32.MessageBoxW(0, str(e), "StripTracker", 0)
+    raise
 
 # --------------------------------------------------------------------------
 # i18n — English / Chinese. Sent to the page as JSON; the client's
