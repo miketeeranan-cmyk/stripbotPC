@@ -135,13 +135,24 @@ tag push is the entire deploy step: `StripTrackerCore-*.zip` is what
 Releases page in a browser and unzip themselves — no terminal, no Python, on
 either OS — to get the launcher installed the first time.
 
-**Packaging gotcha (macOS only):** a `.app` bundle contains symlinks (inside
-`Python.framework`) that `shutil.make_archive`'s zip writer silently mangles
-on extraction — the frozen interpreter fails at startup with
-`ModuleNotFoundError: No module named '_struct'` (or `bad CPU type in
-executable`, i.e. a corrupted Mach-O). `packaging/package_release.py` uses
-macOS's own `ditto -c -k --keepParent` for the `.app` case instead (Windows
-keeps `shutil.make_archive`, which is fine there — no symlinks in a onedir
-folder of DLLs). Always test a **real relocated unzip** of any new mac build
-(copy the zip elsewhere, unzip, run) before trusting it — a build that runs
-fine from its own `dist/` folder can still be silently broken once zipped.
+**Packaging gotcha 1 (macOS, zip corruption):** a `.app` bundle contains
+symlinks (inside `Python.framework`) that `shutil.make_archive`'s zip writer
+silently mangles on extraction — the frozen interpreter fails at startup
+with `ModuleNotFoundError: No module named '_struct'`.
+`packaging/package_release.py` uses macOS's own `ditto -c -k --keepParent`
+for the `.app` case instead (Windows keeps `shutil.make_archive`, which is
+fine there — no symlinks in a onedir folder of DLLs). Always test a **real
+relocated unzip** of any new mac build (copy the zip elsewhere, unzip, run)
+before trusting it — a build that runs fine from its own `dist/` folder can
+still be silently broken once zipped.
+
+**Packaging gotcha 2 (macOS, CPU architecture):** GitHub's `macos-latest`
+runner defaults to Apple Silicon (arm64) and produces an arm64-only binary,
+which won't launch at all on an Intel Mac — same `bad CPU type in
+executable` error a corrupted build gives, but a completely different cause
+(architecture mismatch, not corruption). `release.yml`'s mac job is pinned
+to `macos-13` (Intel) since the actual operator hardware is Intel; if that
+ever changes, either switch the runner label or build both architectures
+(as separate `-mac-x86_64`/`-mac-arm64` assets, with `launcher.py` picking
+the right one via `platform.machine()` — not implemented, since only one
+Mac architecture is in play right now).

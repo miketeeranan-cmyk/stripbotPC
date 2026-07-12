@@ -17,7 +17,11 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [macos-latest, windows-latest]
+        # macos-13 = Intel (x86_64) runner -- macos-latest/macos-14+ default
+        # to Apple Silicon (arm64), which won't run on an Intel Mac at all.
+        # Pinned to match the actual operator hardware; switch back to
+        # macos-latest (or add both) if that ever changes.
+        os: [macos-13, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
