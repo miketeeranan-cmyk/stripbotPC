@@ -29,17 +29,26 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt -r requirements-build.txt
 
-      - name: Build core app
-        run: python packaging/build.py --core
+      # Build + package one target at a time -- PyInstaller's --clean can
+      # wipe dist/'s other target, so don't build both before packaging
+      # either.
+      - name: Build + package core app
+        run: |
+          python packaging/build.py --core
+          python packaging/package_release.py --core
 
-      - name: Package release asset
-        run: python packaging/package_release.py
+      - name: Build + package launcher
+        run: |
+          python packaging/build.py --launcher
+          python packaging/package_release.py --launcher
 
-      - name: Upload build artifact
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-${{ matrix.os }}
-          path: StripTrackerCore-*.zip
+          path: |
+            StripTrackerCore-*.zip
+            StripTracker-*.zip
 
   release:
     needs: build

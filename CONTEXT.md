@@ -108,8 +108,8 @@ Two separate PyInstaller builds (`packaging/build.py`):
 - **`StripTrackerCore`** — `dashboard.py` + `templates/`/`static/`. This is
   the actual app; it's what gets replaced on every update.
 - **`StripTracker`** (from `launcher.py`) — the thing the operator actually
-  double-clicks. Installed once by hand; almost never rebuilt, since it isn't
-  part of the auto-update payload itself.
+  double-clicks. Installed once (by downloading it — see below); almost
+  never rebuilt, since it isn't part of the auto-update payload itself.
 
 `launcher.py` runs on every launch: check the repo's public
 `GET /repos/.../releases/latest` API (unauthenticated — the repo is public
@@ -124,9 +124,24 @@ internet (nothing installed at all) surfaces a message. There is no baked-in
 against each release's `tag_name`.
 
 `.github/workflows/release.yml`: pushing a tag matching `v*.*.*` builds both
-platforms on a `macos-latest`/`windows-latest` matrix
-(`packaging/build.py --core` → `packaging/package_release.py`, which zips the
-build so the archive's top-level entry is exactly the `.app`/folder
-`launcher.py`'s `find_executable()` expects) and publishes them as release
-assets. That tag push is the entire deploy step — the operator's app updates
-itself on their next launch with no manual build or distribution.
+`StripTrackerCore` *and* `StripTracker` on a `macos-latest`/`windows-latest`
+matrix (`packaging/build.py --core`/`--launcher`, immediately followed by
+`packaging/package_release.py --core`/`--launcher` for each — build+package
+one target at a time, since PyInstaller's `--clean` can wipe the other
+target's `dist/` output) and publishes all four zips as release assets. That
+tag push is the entire deploy step: `StripTrackerCore-*.zip` is what
+`launcher.py` silently pulls on the operator's next launch, and
+`StripTracker-*.zip` is a plain download for a human to grab from the
+Releases page in a browser and unzip themselves — no terminal, no Python, on
+either OS — to get the launcher installed the first time.
+
+**Packaging gotcha (macOS only):** a `.app` bundle contains symlinks (inside
+`Python.framework`) that `shutil.make_archive`'s zip writer silently mangles
+on extraction — the frozen interpreter fails at startup with
+`ModuleNotFoundError: No module named '_struct'` (or `bad CPU type in
+executable`, i.e. a corrupted Mach-O). `packaging/package_release.py` uses
+macOS's own `ditto -c -k --keepParent` for the `.app` case instead (Windows
+keeps `shutil.make_archive`, which is fine there — no symlinks in a onedir
+folder of DLLs). Always test a **real relocated unzip** of any new mac build
+(copy the zip elsewhere, unzip, run) before trusting it — a build that runs
+fine from its own `dist/` folder can still be silently broken once zipped.
