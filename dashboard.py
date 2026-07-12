@@ -39,6 +39,7 @@ import stripchat_level_tracker as core
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
 DEMO = "--demo" in sys.argv
+WINDOWED = getattr(sys, "frozen", False) and sys.platform == "win32"
 HOST = "127.0.0.1"
 PORT = 5099
 MAX_LOG_LINES = 500
@@ -474,8 +475,10 @@ def api_threshold():
     return jsonify(ok=True, threshold=value)
 
 
-@app.route("/api/quit", methods=["POST"])
-def api_quit():
+def _quit_gracefully():
+    """If monitoring is live, let the current loop iteration finish (same
+    stop-then-quit path Stop uses) instead of yanking the driver out from
+    under an in-flight Selenium call; otherwise quit immediately."""
     with state.lock:
         monitoring = state.monitoring
         if monitoring:
@@ -487,6 +490,11 @@ def api_quit():
             stop_event.set()
     else:
         threading.Thread(target=_quit_driver_and_exit, daemon=True).start()
+
+
+@app.route("/api/quit", methods=["POST"])
+def api_quit():
+    _quit_gracefully()
     return jsonify(ok=True)
 
 
@@ -681,6 +689,36 @@ def _run_demo_loop(stop_event: threading.Event) -> None:
     _on_monitoring_stopped()
 
 
+def _serve():
+    app.run(host=HOST, port=PORT, debug=False, use_reloader=False, threaded=WINDOWED)
+
+
+def _wait_for_server(timeout=15):
+    import socket
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            socket.create_connection((HOST, PORT), timeout=0.25).close()
+            return
+        except OSError:
+            time.sleep(0.1)
+
+
 if __name__ == "__main__":
-    threading.Timer(0.75, lambda: webbrowser.open(f"http://{HOST}:{PORT}")).start()
-    app.run(host=HOST, port=PORT, debug=False, use_reloader=False)
+    if WINDOWED:
+        import webview  # only ever imported on the frozen Windows build
+
+        threading.Thread(target=_serve, daemon=True).start()
+        _wait_for_server()
+        window = webview.create_window("StripTracker", f"http://{HOST}:{PORT}")
+        # *_ tolerates whatever args this pywebview version's closed event passes
+        window.events.closed += lambda *_: _quit_gracefully()
+        webview.start()
+        os._exit(0)  # window closed some other way -- no graceful shutdown, same as Quit
+    else:
+        threading.Thread(
+            target=lambda: (_wait_for_server(), webbrowser.open(f"http://{HOST}:{PORT}")),
+            daemon=True,
+        ).start()
+        _serve()

@@ -36,7 +36,7 @@ Then:
 ## Running
 
 - `python dashboard.py` — real mode; opens a browser dashboard at
-  `127.0.0.1:5057`. Needs `credentials.json` and Chrome.
+  `127.0.0.1:5099`. Needs `credentials.json` and Chrome.
 - `python dashboard.py --demo` — demo mode; fake data, no Chrome or Google
   Sheets required. Good for trying out the UI safely.
 - `python stripchat_level_tracker.py` — headless CLI, same core tracking

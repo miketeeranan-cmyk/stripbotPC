@@ -21,11 +21,15 @@ check failed) surfaces a message, since there's nothing to launch at all.
 
 import json
 import os
+import queue
 import shutil
 import subprocess
 import sys
+import threading
+import tkinter as tk
 import urllib.request
 import zipfile
+from tkinter import ttk
 
 REPO = "miketeeranan-cmyk/stripbotPC"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{REPO}/releases/latest"
@@ -81,10 +85,19 @@ def fetch_latest_release() -> dict:
         return json.load(resp)
 
 
-def download_asset(url: str, dest_path: str) -> None:
+def download_asset(url: str, dest_path: str, progress_cb=None) -> None:
     req = urllib.request.Request(url, headers={"Accept": "application/octet-stream"})
     with urllib.request.urlopen(req, timeout=120) as resp, open(dest_path, "wb") as out:
-        shutil.copyfileobj(resp, out)
+        total = int(resp.headers.get("Content-Length") or 0)
+        done = 0
+        while True:
+            chunk = resp.read(65536)
+            if not chunk:
+                break
+            out.write(chunk)
+            done += len(chunk)
+            if progress_cb:
+                progress_cb(done / total if total else None)
 
 
 def install_version(tag: str, zip_path: str) -> str:
@@ -113,24 +126,39 @@ def prune_old_versions(keep_tag: str) -> None:
         shutil.rmtree(os.path.join(versions_dir(), stale), ignore_errors=True)
 
 
-def check_and_update() -> None:
+def check_for_update():
+    """Returns (tag, asset) if a newer release is available, else None.
+    None covers both "already up to date" and "check failed" identically --
+    either way the caller should just launch whatever's already installed."""
     try:
         current = read_current_version()
         release = fetch_latest_release()
         tag = release["tag_name"]
         if tag == current and os.path.isdir(os.path.join(versions_dir(), tag)):
-            return
+            return None
         asset = next((a for a in release.get("assets", []) if a["name"] == asset_name()), None)
-        if asset is None:
-            return
+        return (tag, asset) if asset else None
+    except Exception:
+        return None  # offline / GitHub unreachable / bad release -- launch whatever's there
+
+
+def apply_update(tag: str, asset: dict, progress_cb=None) -> bool:
+    """Downloads + installs the given release. current_version.txt is only
+    rewritten after a fully successful install, so a failed/interrupted
+    update never corrupts a working install."""
+    try:
         tmp_zip = os.path.join(app_data_dir(), "_download.zip")
-        download_asset(asset["browser_download_url"], tmp_zip)
+        download_asset(asset["browser_download_url"], tmp_zip, progress_cb=progress_cb)
         install_version(tag, tmp_zip)
         os.remove(tmp_zip)
         write_current_version(tag)
-        prune_old_versions(tag)
+        try:
+            prune_old_versions(tag)  # disk hygiene only -- must not undo a successful update
+        except Exception:
+            pass
+        return True
     except Exception:
-        pass  # offline / GitHub unreachable / bad release -- launch whatever's there
+        return False
 
 
 def find_executable(version_dir: str):
@@ -175,8 +203,101 @@ def _tell_operator_no_internet() -> None:
         print(message, file=sys.stderr)
 
 
+def run_update_ui() -> None:
+    """Small window: checks for an update, and either closes itself straight
+    through (nothing new / check failed) or shows an Update Now button that
+    reveals a real progress bar once clicked. Always returns with the window
+    gone, ready for the caller to launch whatever's now installed. The
+    window can't be closed while a download/install is in progress, so the
+    caller never launches while that work is still mid-flight."""
+    events = queue.Queue()
+    updating = False
+    indeterminate = False
+
+    root = tk.Tk()
+    root.title("StripTracker")
+    root.geometry("320x110")
+    root.resizable(False, False)
+    root.eval("tk::PlaceWindow . center")
+    root.protocol("WM_DELETE_WINDOW", lambda: None if updating else root.destroy())
+
+    label = tk.Label(root, text="Checking for updates…", font=("Segoe UI", 11))
+    label.pack(pady=(20, 8))
+    button = tk.Button(root, text="Update Now")
+    bar = ttk.Progressbar(root, length=260, mode="determinate", maximum=1.0)
+
+    def start_check():
+        threading.Thread(
+            target=lambda: events.put(("checked", check_for_update())), daemon=True
+        ).start()
+
+    def start_apply(tag, asset):
+        nonlocal updating
+        updating = True
+        label.config(text=f"Downloading update {tag}…")
+        button.pack_forget()
+        bar.pack(pady=8)
+
+        def worker():
+            ok = apply_update(tag, asset, progress_cb=lambda f: events.put(("progress", f)))
+            events.put(("done", ok))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def finish(message=None):
+        nonlocal updating
+        updating = False
+        if message is None:
+            root.destroy()
+            return
+        label.config(text=message)
+        bar.pack_forget()
+        root.after(1200, root.destroy)
+
+    _NO_EVENT = object()  # distinct from a legitimate ("progress", None) indeterminate payload
+
+    def poll():
+        nonlocal indeterminate
+        latest_progress = _NO_EVENT
+        try:
+            while True:
+                kind, payload = events.get_nowait()
+                if kind == "checked":
+                    if payload is None:
+                        finish()
+                        return
+                    tag, asset = payload
+                    label.config(text=f"Update available: {tag}")
+                    button.config(command=lambda: start_apply(tag, asset))
+                    button.pack(pady=8)
+                elif kind == "progress":
+                    latest_progress = payload
+                elif kind == "done":
+                    finish(None if payload else "Update failed — launching current version…")
+                    return
+        except queue.Empty:
+            pass
+        if latest_progress is not _NO_EVENT:
+            if latest_progress is None:
+                if not indeterminate:
+                    indeterminate = True
+                    bar.config(mode="indeterminate")
+                    bar.start(15)
+            else:
+                if indeterminate:
+                    indeterminate = False
+                    bar.stop()
+                    bar.config(mode="determinate")
+                bar["value"] = min(1.0, latest_progress)
+        root.after(100, poll)
+
+    start_check()
+    root.after(100, poll)
+    root.mainloop()
+
+
 def main() -> None:
-    check_and_update()
+    run_update_ui()
     if not launch_current():
         _tell_operator_no_internet()
         sys.exit(1)

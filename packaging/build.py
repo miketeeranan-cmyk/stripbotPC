@@ -29,6 +29,13 @@ DATA_SEP = ";" if sys.platform == "win32" else ":"
 # it needs to be told explicitly, or the build fails outright.
 TARGET_ARCH_FLAGS = ["--target-architecture=x86_64"] if sys.platform == "darwin" else []
 
+# pywebview's Windows backend (edgechromium, via pythonnet) dispatches to
+# platform submodules and a compiled .NET runtime bridge that PyInstaller's
+# import scanner can't find on its own -- --collect-all is what actually
+# makes the frozen build import `webview` successfully, not just
+# --hidden-import.
+WEBVIEW_FLAGS = ["--collect-all=pywebview", "--collect-all=pythonnet"] if sys.platform == "win32" else []
+
 
 def _run(args):
     subprocess.run(args, check=True, cwd=REPO_ROOT)
@@ -47,6 +54,7 @@ def build_core():
             "--name",
             "StripTrackerCore",
             *TARGET_ARCH_FLAGS,
+            *WEBVIEW_FLAGS,
             f"--add-data=templates{DATA_SEP}templates",
             f"--add-data=static{DATA_SEP}static",
             "dashboard.py",

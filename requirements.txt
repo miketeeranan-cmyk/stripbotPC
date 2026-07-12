@@ -4,3 +4,4 @@ oauth2client
 selenium
 webdriver-manager
 cryptography
+pywebview; sys_platform == "win32"

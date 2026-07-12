@@ -19,7 +19,9 @@ python stripchat_level_tracker.py   # headless CLI, same core logic
 python packaging/build.py      # build the desktop app + launcher (PyInstaller)
 ```
 
-- Dashboard serves on `127.0.0.1:5057` and auto-opens a browser tab.
+- Dashboard serves on `127.0.0.1:5099` and auto-opens a browser tab — except
+  the packaged Windows build (`WINDOWED` true: frozen + `win32`), which opens
+  its own native `pywebview` window instead of a browser tab.
 - **Test dashboard changes with `--demo` first** — same UI code paths, no
   Chrome/Sheets setup.
 - Each `Bash` call is a fresh shell — `source venv/bin/activate` won't persist;
