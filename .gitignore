@@ -26,10 +26,12 @@ env/
 .DS_Store
 Thumbs.db
 
-# PyInstaller build output (see packaging/build.py)
+# PyInstaller build output (see packaging/build.py, packaging/package_release.py)
 build/
 dist/
 *.spec
+/StripTracker-*.zip
+/StripTrackerCore-*.zip
 
 # Logs
 run_output.log

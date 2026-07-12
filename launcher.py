@@ -92,8 +92,17 @@ def install_version(tag: str, zip_path: str) -> str:
     if os.path.isdir(target):
         shutil.rmtree(target)
     os.makedirs(target)
-    with zipfile.ZipFile(zip_path) as zf:
-        zf.extractall(target)
+    if sys.platform == "darwin":
+        # zipfile.extractall() preserves neither symlinks nor the executable
+        # bit -- it would silently corrupt the .app bundle's
+        # Python.framework symlinks on every single update (the same class
+        # of bug ditto was already needed for on the packaging side, see
+        # packaging/package_release.py). ditto is the extraction
+        # counterpart that handles both correctly.
+        subprocess.run(["ditto", "-x", "-k", zip_path, target], check=True)
+    else:
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(target)
     return target
 
 
