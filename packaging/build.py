@@ -36,6 +36,13 @@ TARGET_ARCH_FLAGS = ["--target-architecture=x86_64"] if sys.platform == "darwin"
 # --hidden-import.
 WEBVIEW_FLAGS = ["--collect-all=pywebview", "--collect-all=pythonnet"] if sys.platform == "win32" else []
 
+# selenium/webdriver_manager reach submodules (e.g. selenium.webdriver.chrome
+# .options, via webdriver.ChromeOptions()) through attribute access rather
+# than a direct import, which PyInstaller's static scanner doesn't follow --
+# without --collect-all the frozen build fails at runtime with
+# "No module named selenium.webdriver...".
+SELENIUM_FLAGS = ["--collect-all=selenium", "--collect-all=webdriver_manager"]
+
 
 def _run(args):
     subprocess.run(args, check=True, cwd=REPO_ROOT)
@@ -55,6 +62,7 @@ def build_core():
             "StripTrackerCore",
             *TARGET_ARCH_FLAGS,
             *WEBVIEW_FLAGS,
+            *SELENIUM_FLAGS,
             f"--add-data=templates{DATA_SEP}templates",
             f"--add-data=static{DATA_SEP}static",
             "dashboard.py",
