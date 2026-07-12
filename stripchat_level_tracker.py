@@ -256,9 +256,19 @@ def start_browser():
     options.add_argument("--start-maximized")
     # Keep the window open so you can manually log in the first time
     options.add_experimental_option("detach", True)
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()), options=options
-    )
+    try:
+        # Primary path: webdriver_manager checks/downloads a matching
+        # chromedriver from its own endpoint.
+        driver = webdriver.Chrome(
+            service=Service(ChromeDriverManager().install()), options=options
+        )
+    except Exception:
+        # Fall back to Selenium's own bundled driver resolution (Selenium
+        # Manager, selenium>=4.6) -- it hits a different endpoint and also
+        # checks for a chromedriver already on PATH or already cached, so it
+        # can succeed on machines where webdriver_manager's endpoint is
+        # blocked or unreachable (firewalls, some corporate/VPN networks).
+        driver = webdriver.Chrome(options=options)
     driver.get(DASHBOARD_URL)
     return driver
 
