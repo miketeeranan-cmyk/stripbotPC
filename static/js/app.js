@@ -14,6 +14,18 @@
 
   const $ = (id) => document.getElementById(id);
 
+  // ---------------- auth: redirect to /login on any 401 ----------------
+  // Sessions can expire (or the server can restart with a fresh secret key)
+  // while the dashboard is open in a tab; a 401 from any endpoint means the
+  // session is gone, so bounce straight to the login page.
+  async function apiFetch(url, options) {
+    const res = await fetch(url, options);
+    if (res.status === 401) {
+      window.location.href = "/login";
+    }
+    return res;
+  }
+
   // ---------------- screen / modal plumbing ----------------
   function showScreen(id) {
     document.querySelectorAll(".screen").forEach((el) => el.classList.add("hidden"));
@@ -50,7 +62,7 @@
     $("sheet-list").classList.add("hidden");
     $("retry-btn").classList.add("hidden");
     try {
-      const res = await fetch("/api/connect", { method: "POST" });
+      const res = await apiFetch("/api/connect", { method: "POST" });
       const data = await res.json();
       $("connect-spinner").classList.add("hidden");
       if (data.ok) {
@@ -85,7 +97,7 @@
   }
 
   async function selectSheet(name) {
-    await fetch("/api/select-sheet", {
+    await apiFetch("/api/select-sheet", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sheet_name: name }),
@@ -114,7 +126,7 @@
 
   async function pollOnce() {
     try {
-      const res = await fetch(`/api/poll?since=${lastLogId}`);
+      const res = await apiFetch(`/api/poll?since=${lastLogId}`);
       const data = await res.json();
       applyPoll(data);
     } catch (e) {
@@ -297,23 +309,23 @@
     $("start-btn").disabled = true;
     $("switch-btn").disabled = true;
     setStatus("busy");
-    await fetch("/api/start", { method: "POST" });
+    await apiFetch("/api/start", { method: "POST" });
   });
 
   $("stop-btn").addEventListener("click", async () => {
     $("stop-btn").disabled = true;
     setStatus("busy");
-    await fetch("/api/stop", { method: "POST" });
+    await apiFetch("/api/stop", { method: "POST" });
   });
 
   // ---------------- switch sheet modal ----------------
   $("switch-btn").addEventListener("click", async () => {
     if (monitoring) return;
-    const res = await fetch("/api/sheets");
+    const res = await apiFetch("/api/sheets");
     const data = await res.json();
     renderSheetOptions($("switch-list"), data.sheets, async (name) => {
       hideModal("modal-switch-sheet");
-      const r = await fetch("/api/switch-sheet", {
+      const r = await apiFetch("/api/switch-sheet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sheet_name: name }),
@@ -338,7 +350,7 @@
 
   async function applyThreshold() {
     const raw = $("threshold-input").value.trim();
-    const res = await fetch("/api/threshold", {
+    const res = await apiFetch("/api/threshold", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ value: raw }),
@@ -365,7 +377,7 @@
   }
 
   async function ackPrompt(kind, confirm) {
-    await fetch("/api/ready", {
+    await apiFetch("/api/ready", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind, confirm }),
@@ -486,8 +498,27 @@
     const message = monitoring ? t(lang, "quit_confirm") : t(lang, "quit_confirm_idle");
     showConfirmModal(message, () => {
       stopPolling();
-      fetch("/api/quit", { method: "POST" });
-      window.close();
+      // Plain fetch, not apiFetch -- this tab is closing regardless of the
+      // response, so it must never trigger apiFetch's on-401 redirect to
+      // /login (the server may already be mid-shutdown by the time this
+      // settles). Close attempt runs either way via .finally().
+      fetch("/api/quit", { method: "POST" }).finally(() => {
+        // window.close() alone is blocked by browsers for tabs that weren't
+        // opened via window.open() -- which this one wasn't, since
+        // webbrowser.open() on the Python side just opens a normal tab.
+        // Re-pointing the window at itself via open() first makes browsers
+        // treat it as script-owned, so the following close() actually works.
+        window.open("", "_self");
+        window.close();
+      });
+    });
+  });
+
+  // ---------------- logout ----------------
+  $("logout-btn").addEventListener("click", () => {
+    stopPolling();
+    fetch("/logout", { method: "POST" }).finally(() => {
+      window.location.href = "/login";
     });
   });
 

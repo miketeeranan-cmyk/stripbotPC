@@ -1,0 +1,954 @@
+<title>Stripchat Tracker — Linear-style mockup</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --bg-elevated: #101014;
+    --card: #131318;
+    --border: #23232b;
+    --accent: #6e56cf;
+    --accent-soft: rgba(110, 86, 207, 0.16);
+    --accent-strong: #8873dd;
+    --text: #e4e4e7;
+    --text-dim: #8b8894;
+    --success: #3ecf8e;
+    --success-bg: rgba(62, 207, 142, 0.12);
+    --error: #f76e6e;
+    --error-bg: rgba(247, 110, 110, 0.12);
+    --warning: #e2a33d;
+    --warning-bg: rgba(226, 163, 61, 0.12);
+    --shadow: 0 16px 44px rgba(0, 0, 0, 0.55);
+    --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.35);
+    --radius: 14px;
+    --radius-sm: 9px;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #faf8f3;
+      --bg-elevated: #fffefb;
+      --card: #fffefb;
+      --border: #e9e1d2;
+      --accent: #6d49b8;
+      --accent-soft: rgba(109, 73, 184, 0.09);
+      --accent-strong: #5a3894;
+      --text: #24201a;
+      --text-dim: #7a7263;
+      --success-bg: rgba(29, 158, 106, 0.1);
+      --success: #1d9e6a;
+      --error-bg: rgba(214, 66, 66, 0.1);
+      --error: #d64242;
+      --warning-bg: rgba(179, 122, 15, 0.1);
+      --warning: #b37a0f;
+      --shadow: 0 16px 44px rgba(60, 42, 20, 0.1);
+      --shadow-sm: 0 2px 10px rgba(60, 42, 20, 0.07);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0a0a0f;
+    --bg-elevated: #101014;
+    --card: #131318;
+    --border: #23232b;
+    --accent: #6e56cf;
+    --accent-soft: rgba(110, 86, 207, 0.16);
+    --accent-strong: #8873dd;
+    --text: #e4e4e7;
+    --text-dim: #8b8894;
+    --success-bg: rgba(62, 207, 142, 0.12);
+    --success: #3ecf8e;
+    --error-bg: rgba(247, 110, 110, 0.12);
+    --error: #f76e6e;
+    --warning-bg: rgba(226, 163, 61, 0.12);
+    --warning: #e2a33d;
+    --shadow: 0 16px 44px rgba(0, 0, 0, 0.55);
+    --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.35);
+  }
+
+  :root[data-theme="light"] {
+    --bg: #faf8f3;
+    --bg-elevated: #fffefb;
+    --card: #fffefb;
+    --border: #e9e1d2;
+    --accent: #6d49b8;
+    --accent-soft: rgba(109, 73, 184, 0.09);
+    --accent-strong: #5a3894;
+    --text: #24201a;
+    --text-dim: #7a7263;
+    --success-bg: rgba(29, 158, 106, 0.1);
+    --success: #1d9e6a;
+    --error-bg: rgba(214, 66, 66, 0.1);
+    --error: #d64242;
+    --warning-bg: rgba(179, 122, 15, 0.1);
+    --warning: #b37a0f;
+    --shadow: 0 16px 44px rgba(60, 42, 20, 0.1);
+    --shadow-sm: 0 2px 10px rgba(60, 42, 20, 0.07);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; }
+
+  /* ---------- preview chrome (mockup-only, not part of the real app) ---------- */
+  .preview-bar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 1.25rem;
+    background: var(--accent-soft);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(6px);
+    font-size: 0.82rem;
+    flex-wrap: wrap;
+  }
+
+  .preview-bar .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex: none;
+  }
+
+  .preview-bar strong { font-weight: 600; }
+
+  .preview-bar .fill { flex: 1; }
+
+  .preview-bar .fake-data-note {
+    color: var(--text-dim);
+  }
+
+  .chip-btn {
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.32rem 0.85rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background-color 0.2s ease, color 0.2s ease, transform 0.08s ease;
+  }
+
+  .chip-btn:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .chip-btn:active { transform: translateY(0); }
+
+  .chip-btn:focus-visible,
+  .btn:focus-visible,
+  .option:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* ---------- app shell (mirrors templates/index.html + dashboard.css) ---------- */
+  .shell {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 2.25rem 1.5rem 4rem;
+    transition: opacity 0.16s ease;
+  }
+
+  .shell.fading { opacity: 0.35; }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .topbar h1 {
+    font-size: 1.2rem;
+    letter-spacing: 0.06em;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    border-radius: 999px;
+    padding: 0.3rem 0.75rem 0.3rem 0.6rem;
+    background: var(--success-bg);
+    color: var(--success);
+  }
+
+  .status-pill .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  .sheet-badge {
+    margin-left: auto;
+    color: var(--text-dim);
+    font-size: 0.82rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.28rem 0.85rem;
+  }
+
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.85rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .stat-label {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    font-weight: 600;
+  }
+
+  .stat-value {
+    font-size: 1.55rem;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .btn {
+    background: var(--bg-elevated);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.6rem 1.1rem;
+    font-size: 0.88rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: filter 0.15s ease, transform 0.08s ease, border-color 0.15s ease,
+      background-color 0.25s ease, color 0.25s ease, box-shadow 0.2s ease;
+  }
+
+  .btn:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+  .btn:active:not(:disabled) { transform: translateY(1px); transition-duration: 0.05s; }
+
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #ffffff;
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    filter: brightness(1.08);
+    border-color: var(--accent);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+
+  .btn-error {
+    background: var(--error-bg);
+    border-color: color-mix(in srgb, var(--error) 45%, var(--border));
+    color: var(--error);
+  }
+
+  .btn-warning {
+    background: var(--warning-bg);
+    border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+    color: var(--warning);
+  }
+
+  .log-panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.9rem 1.1rem 1.1rem;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .log-title {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    font-weight: 600;
+    margin-bottom: 0.6rem;
+  }
+
+  .log-table-wrap {
+    overflow: auto;
+    min-height: 200px;
+    max-height: 380px;
+    transition: opacity 0.14s ease;
+  }
+
+  .log-table-wrap.fading { opacity: 0.35; }
+
+  #log-table {
+    width: 100%;
+    min-width: 480px;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.87rem;
+  }
+
+  #log-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: color-mix(in srgb, var(--bg-elevated) 82%, transparent);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    text-align: left;
+    padding: 0.6rem 0.75rem;
+    color: var(--text-dim);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 4px 10px -4px rgba(0, 0, 0, 0.35);
+  }
+
+  #log-table thead th:first-child { border-top-left-radius: var(--radius-sm); }
+  #log-table thead th:last-child { border-top-right-radius: var(--radius-sm); }
+
+  .log-pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-top: 0.85rem;
+  }
+
+  .log-pager-label {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    min-width: 6.5em;
+    text-align: center;
+  }
+
+  #log-table tbody td {
+    padding: 0.62rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  #log-table tbody tr:last-child td { border-bottom: none; }
+
+  #log-table tbody tr:hover td { background: var(--accent-soft); }
+
+  #log-table td:nth-child(2) { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  #log-table td:nth-child(4) {
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .log-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .log-link:hover { text-decoration: underline; }
+
+  .level-chip {
+    display: inline-block;
+    min-width: 2.4em;
+    text-align: center;
+    padding: 0.12rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+  }
+
+  .level-chip.high { background: var(--success-bg); color: var(--success); }
+  .level-chip.mid { background: var(--warning-bg); color: var(--warning); }
+
+  /* ---------- modal demo ---------- */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(4, 4, 8, 0.6);
+    backdrop-filter: blur(3px);
+    z-index: 30;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0s linear 0.2s, background-color 0.25s ease;
+  }
+
+  .overlay.visible {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.2s ease, visibility 0s linear 0s, background-color 0.25s ease;
+  }
+
+  @media (prefers-color-scheme: light) {
+    .overlay { background: rgba(45, 35, 20, 0.35); }
+  }
+
+  :root[data-theme="light"] .overlay { background: rgba(45, 35, 20, 0.35); }
+  :root[data-theme="dark"] .overlay { background: rgba(4, 4, 8, 0.6); }
+
+  .modal {
+    position: fixed;
+    inset: 0;
+    z-index: 31;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.18s ease, visibility 0s linear 0.18s;
+  }
+
+  .modal.visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: opacity 0.18s ease, visibility 0s linear 0s;
+  }
+
+  .modal .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 1.75rem;
+    width: 100%;
+    max-width: 400px;
+    transform: translateY(10px) scale(0.97);
+    transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1),
+      background-color 0.25s ease, border-color 0.25s ease;
+  }
+
+  .modal.visible .card {
+    transform: translateY(0) scale(1);
+  }
+
+  .modal .card h2 {
+    margin: 0 0 0.4rem;
+    font-size: 1.05rem;
+  }
+
+  .modal .card p {
+    margin: 0;
+    color: var(--text-dim);
+    line-height: 1.55;
+    font-size: 0.9rem;
+  }
+
+  #threshold-input {
+    width: 100%;
+    margin-top: 0.9rem;
+    padding: 0.6rem 0.8rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    font-size: 0.95rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #threshold-input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .modal-buttons {
+    display: flex;
+    gap: 0.6rem;
+    justify-content: flex-end;
+    margin-top: 1.4rem;
+  }
+
+  .hidden { display: none !important; }
+
+  .caption {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    margin-top: 2rem;
+  }
+
+  @keyframes rise-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes pulse-ring {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 45%, transparent); }
+    70% { box-shadow: 0 0 0 7px color-mix(in srgb, currentColor 0%, transparent); }
+    100% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 0%, transparent); }
+  }
+
+  .topbar,
+  .stat-card,
+  .controls .btn,
+  .log-panel {
+    animation: rise-in 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+
+  .topbar { animation-delay: 0s; }
+  .stat-card:nth-child(1) { animation-delay: 0.05s; }
+  .stat-card:nth-child(2) { animation-delay: 0.1s; }
+  .stat-card:nth-child(3) { animation-delay: 0.15s; }
+  .stat-card:nth-child(4) { animation-delay: 0.2s; }
+  .controls .btn:nth-child(1) { animation-delay: 0.24s; }
+  .controls .btn:nth-child(2) { animation-delay: 0.27s; }
+  .controls .btn:nth-child(3) { animation-delay: 0.3s; }
+  .controls .btn:nth-child(4) { animation-delay: 0.33s; }
+  .controls .btn:nth-child(5) { animation-delay: 0.36s; }
+  .controls .btn:nth-child(6) { animation-delay: 0.39s; }
+  .log-panel { animation-delay: 0.3s; }
+
+  #log-table tbody tr {
+    animation: rise-in 0.4s ease both;
+  }
+  #log-table tbody tr:nth-child(1) { animation-delay: 0.42s; }
+  #log-table tbody tr:nth-child(2) { animation-delay: 0.47s; }
+  #log-table tbody tr:nth-child(3) { animation-delay: 0.52s; }
+  #log-table tbody tr:nth-child(4) { animation-delay: 0.57s; }
+
+  body,
+  .preview-bar,
+  .stat-card,
+  .log-panel,
+  .status-pill,
+  .sheet-badge,
+  #log-table tbody tr {
+    transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+  }
+
+  #log-table tbody tr:hover td { transition: background-color 0.12s ease; }
+
+  @keyframes row-enter {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes row-highlight {
+    0% { background-color: var(--accent-soft); }
+    100% { background-color: transparent; }
+  }
+
+  .row-enter {
+    animation: row-enter 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both,
+      row-highlight 1.6s ease-out both;
+  }
+
+  @keyframes stat-bump {
+    0% { transform: scale(1); color: var(--text); }
+    35% { transform: scale(1.16); color: var(--accent); }
+    100% { transform: scale(1); color: var(--text); }
+  }
+
+  .stat-bump {
+    display: inline-block;
+    animation: stat-bump 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+</style>
+
+<div class="preview-bar">
+  <span class="dot"></span>
+  <strong>Preview — Linear-style redesign concept</strong>
+  <span class="fake-data-note">placeholder data · try the "Language" button below for the EN/中文 crossfade</span>
+  <span class="fill"></span>
+  <button class="chip-btn" id="theme-toggle" type="button">Toggle light / dark</button>
+  <button class="chip-btn" id="modal-toggle" type="button">Preview: Set Threshold modal</button>
+  <button class="chip-btn" id="log-simulate" type="button">Simulate: user logged</button>
+  <button class="chip-btn" id="log-simulate-bulk" type="button">Simulate +50 users</button>
+</div>
+
+<div class="shell">
+  <header class="topbar">
+    <h1 data-i18n="app_title">Stripchat User Tracker</h1>
+    <span class="status-pill"><span class="dot"></span>LIVE</span>
+    <span class="sheet-badge">Sheet: Main</span>
+  </header>
+
+  <div class="stats-row">
+    <div class="stat-card">
+      <span class="stat-label" data-i18n="stat_logged">Logged</span>
+      <span class="stat-value">4</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label" data-i18n="stat_threshold">Threshold</span>
+      <span class="stat-value">100</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label" data-i18n="stat_poll">Poll</span>
+      <span class="stat-value">5s</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label" data-i18n="stat_uptime">Uptime</span>
+      <span class="stat-value">01:23:45</span>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn btn-primary" type="button" data-i18n="start_btn">Start</button>
+    <button class="btn btn-error" type="button" disabled data-i18n="stop_btn">Stop</button>
+    <button class="btn" type="button" data-i18n="switch_sheet_btn">Switch Sheet</button>
+    <button class="btn" type="button" data-i18n="threshold_btn">Set Threshold</button>
+    <button class="btn" type="button" id="lang-toggle" data-i18n="lang_btn">Language</button>
+    <button class="btn btn-error" type="button" data-i18n="quit_btn">Quit</button>
+  </div>
+
+  <div class="log-panel">
+    <div class="log-title" data-i18n="activity_log">Activity log</div>
+    <div class="log-table-wrap">
+      <table id="log-table">
+        <thead>
+          <tr>
+            <th data-i18n="field_username">Username</th>
+            <th data-i18n="field_level">Level</th>
+            <th data-i18n="link_label">Link</th>
+            <th data-i18n="field_time">Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>velvet_moon22</td>
+            <td><span class="level-chip high">128</span></td>
+            <td><a class="log-link" href="#" onclick="return false;">view profile ↗</a></td>
+            <td>2026-07-12 12:04</td>
+          </tr>
+          <tr>
+            <td>orchid_stellaa</td>
+            <td><span class="level-chip high">115</span></td>
+            <td><a class="log-link" href="#" onclick="return false;">view profile ↗</a></td>
+            <td>2026-07-12 12:03</td>
+          </tr>
+          <tr>
+            <td>nightshade_kv</td>
+            <td><span class="level-chip mid">104</span></td>
+            <td><a class="log-link" href="#" onclick="return false;">view profile ↗</a></td>
+            <td>2026-07-12 12:02</td>
+          </tr>
+          <tr>
+            <td>lunafeather</td>
+            <td><span class="level-chip mid">101</span></td>
+            <td><span style="color:var(--text-dim);">pending…</span></td>
+            <td>2026-07-12 12:01</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="log-pager hidden" id="log-pager">
+      <button class="btn" id="log-prev" type="button" disabled>&larr; Prev</button>
+      <span class="log-pager-label" id="log-pager-label">Page 1 of 1</span>
+      <button class="btn" id="log-next" type="button" disabled>Next &rarr;</button>
+    </div>
+  </div>
+
+  <p class="caption">Structure and copy match the real dashboard — only color, radius, and shadow change here.</p>
+</div>
+
+<div class="overlay" id="overlay"></div>
+<div class="modal" id="modal-threshold" role="dialog" aria-modal="true" aria-labelledby="threshold-title">
+  <div class="card">
+    <h2 id="threshold-title">Set level threshold</h2>
+    <p>Only viewers at or above this level get logged. Takes effect on the next poll cycle — already-logged users are unaffected.</p>
+    <input type="number" id="threshold-input" min="1" step="1" value="100">
+    <div class="modal-buttons">
+      <button class="btn" type="button" id="modal-cancel">Cancel</button>
+      <button class="btn btn-primary" type="button" id="modal-apply">Apply</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var STRINGS = {
+    app_title: { en: 'Stripchat User Tracker', zh: 'Stripchat 用户追踪器' },
+    stat_logged: { en: 'Logged', zh: '已记录' },
+    stat_threshold: { en: 'Threshold', zh: '等级阈值' },
+    stat_poll: { en: 'Poll', zh: '轮询间隔' },
+    stat_uptime: { en: 'Uptime', zh: '运行时间' },
+    start_btn: { en: 'Start', zh: '开始' },
+    stop_btn: { en: 'Stop', zh: '停止' },
+    switch_sheet_btn: { en: 'Switch Sheet', zh: '切换工作表' },
+    threshold_btn: { en: 'Set Threshold', zh: '设置阈值' },
+    lang_btn: { en: 'Language', zh: '语言' },
+    quit_btn: { en: 'Quit', zh: '退出' },
+    activity_log: { en: 'Activity log', zh: '活动日志' },
+    field_username: { en: 'Username', zh: '用户名' },
+    field_level: { en: 'Level', zh: '等级' },
+    link_label: { en: 'Link', zh: '链接' },
+    field_time: { en: 'Time', zh: '时间' }
+  };
+  var currentLang = 'en';
+
+  function applyStrings(lang) {
+    document.querySelectorAll('[data-i18n]').forEach(function (el) {
+      var entry = STRINGS[el.getAttribute('data-i18n')];
+      if (entry) el.textContent = entry[lang];
+    });
+    document.documentElement.setAttribute('lang', lang);
+  }
+
+  function switchLanguage(lang) {
+    var shell = document.querySelector('.shell');
+    if (reduceMotion) {
+      applyStrings(lang);
+      currentLang = lang;
+      return;
+    }
+    shell.classList.add('fading');
+    setTimeout(function () {
+      applyStrings(lang);
+      currentLang = lang;
+      shell.classList.remove('fading');
+    }, 140);
+  }
+
+  document.getElementById('lang-toggle').addEventListener('click', function () {
+    switchLanguage(currentLang === 'en' ? 'zh' : 'en');
+  });
+
+  var root = document.documentElement;
+  var themeBtn = document.getElementById('theme-toggle');
+  themeBtn.addEventListener('click', function () {
+    var current = root.getAttribute('data-theme');
+    var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    var effectiveIsDark = current ? current === 'dark' : prefersDark;
+    root.setAttribute('data-theme', effectiveIsDark ? 'light' : 'dark');
+  });
+
+  var overlay = document.getElementById('overlay');
+  var modal = document.getElementById('modal-threshold');
+  var modalToggle = document.getElementById('modal-toggle');
+  function openModal() {
+    overlay.classList.add('visible');
+    modal.classList.add('visible');
+    document.getElementById('threshold-input').focus();
+  }
+  function closeModal() {
+    overlay.classList.remove('visible');
+    modal.classList.remove('visible');
+  }
+  modalToggle.addEventListener('click', openModal);
+  overlay.addEventListener('click', closeModal);
+  document.getElementById('modal-cancel').addEventListener('click', closeModal);
+  document.getElementById('modal-apply').addEventListener('click', closeModal);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeModal();
+  });
+
+  function countUp(el, target, duration) {
+    if (reduceMotion) { el.textContent = target; return; }
+    var start = performance.now();
+    function tick(now) {
+      var progress = Math.min((now - start) / duration, 1);
+      var eased = 1 - Math.pow(1 - progress, 3);
+      el.textContent = Math.round(eased * target);
+      if (progress < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  var loggedValue = document.querySelector('.stat-card:nth-child(1) .stat-value');
+  var thresholdValue = document.querySelector('.stat-card:nth-child(2) .stat-value');
+  setTimeout(function () { countUp(loggedValue, 4, 700); }, 150);
+  setTimeout(function () { countUp(thresholdValue, 100, 700); }, 200);
+
+  // ---------------- simulate "user logged" rows, paginated 200/page like the real app will be ----------------
+  var namePool = ['crimson_iris', 'honeyglow_x', 'sable_lynn', 'opal_drift', 'ember_rue', 'vixen_marlo', 'plumkiss_v', 'solstice_ray'];
+  var nameIndex = 0;
+  var PAGE_SIZE = 200;
+  var allRows = Array.prototype.slice.call(document.querySelectorAll('#log-table tbody tr'));
+  var currentPage = 0;
+
+  function pad2(n) { return String(n).padStart(2, '0'); }
+  function formatTimestamp(d) {
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) +
+      ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+  }
+
+  function bumpStat(el, by) {
+    var current = parseInt(el.textContent, 10) || 0;
+    el.textContent = current + by;
+    if (reduceMotion) return;
+    el.classList.remove('stat-bump');
+    void el.offsetWidth;
+    el.classList.add('stat-bump');
+  }
+
+  function nextFakeName() {
+    var cycle = Math.floor(nameIndex / namePool.length);
+    var name = namePool[nameIndex % namePool.length] + (cycle > 0 ? '_' + (cycle + 1) : '');
+    nameIndex++;
+    return name;
+  }
+
+  function buildLogRow(name, level, timestamp) {
+    var tr = document.createElement('tr');
+
+    var tdName = document.createElement('td');
+    tdName.textContent = name;
+
+    var tdLevel = document.createElement('td');
+    var chip = document.createElement('span');
+    chip.className = 'level-chip ' + (level >= 115 ? 'high' : 'mid');
+    chip.textContent = String(level);
+    tdLevel.appendChild(chip);
+
+    var tdLink = document.createElement('td');
+    var link = document.createElement('a');
+    link.className = 'log-link';
+    link.href = '#';
+    link.textContent = 'view profile ↗';
+    link.addEventListener('click', function (e) { e.preventDefault(); });
+    tdLink.appendChild(link);
+
+    var tdTime = document.createElement('td');
+    tdTime.textContent = timestamp;
+
+    tr.appendChild(tdName);
+    tr.appendChild(tdLevel);
+    tr.appendChild(tdLink);
+    tr.appendChild(tdTime);
+    return tr;
+  }
+
+  function totalPages() {
+    return Math.max(1, Math.ceil(allRows.length / PAGE_SIZE));
+  }
+
+  function updatePagerUI() {
+    var pages = totalPages();
+    var pager = document.getElementById('log-pager');
+    pager.classList.toggle('hidden', pages <= 1);
+    document.getElementById('log-pager-label').textContent = 'Page ' + (currentPage + 1) + ' of ' + pages;
+    document.getElementById('log-prev').disabled = currentPage <= 0;
+    document.getElementById('log-next').disabled = currentPage >= pages - 1;
+  }
+
+  function renderPage(pageIndex) {
+    var wrap = document.querySelector('.log-table-wrap');
+    var tbody = document.querySelector('#log-table tbody');
+
+    // Flip the page state and pager label immediately, so a fast run of
+    // addEntryToLog calls (e.g. simulateBulk) always sees the current page
+    // right away -- only the visual row swap below is what gets faded/delayed.
+    currentPage = pageIndex;
+    updatePagerUI();
+
+    function paint() {
+      tbody.innerHTML = '';
+      var start = pageIndex * PAGE_SIZE;
+      allRows.slice(start, start + PAGE_SIZE).forEach(function (tr) { tbody.appendChild(tr); });
+      wrap.classList.remove('fading');
+    }
+
+    if (reduceMotion) {
+      paint();
+    } else {
+      wrap.classList.add('fading');
+      setTimeout(paint, 140);
+    }
+  }
+
+  function flashNewRow(tr) {
+    if (reduceMotion) return;
+    tr.classList.add('row-enter');
+    setTimeout(function () { tr.classList.remove('row-enter'); }, 1650);
+  }
+
+  // Adds one new row, following the same "which page does it belong on" +
+  // smart-follow logic the real app will use.
+  function addEntryToLog(tr, animate) {
+    var wasOnLastPage = currentPage === totalPages() - 1;
+    allRows.push(tr);
+    var rowPageIndex = Math.floor((allRows.length - 1) / PAGE_SIZE);
+
+    if (rowPageIndex === currentPage) {
+      var tbody = document.querySelector('#log-table tbody');
+      tbody.appendChild(tr);
+      var wrap = document.querySelector('.log-table-wrap');
+      wrap.scrollTop = wrap.scrollHeight;
+      if (animate) flashNewRow(tr);
+      updatePagerUI();
+    } else if (wasOnLastPage) {
+      // a new page was just created and we were watching live -- follow it
+      renderPage(rowPageIndex);
+      if (animate) setTimeout(function () { flashNewRow(tr); }, 180);
+    } else {
+      // new page created, but the viewer is reviewing an older page --
+      // leave their view alone, just make the new page reachable
+      updatePagerUI();
+    }
+  }
+
+  function simulateLogEntry() {
+    var name = nextFakeName();
+    var level = 100 + Math.floor(Math.random() * 40);
+    var tr = buildLogRow(name, level, formatTimestamp(new Date()));
+    addEntryToLog(tr, true);
+    bumpStat(loggedValue, 1);
+  }
+
+  function simulateBulk(count) {
+    for (var i = 0; i < count; i++) {
+      var name = nextFakeName();
+      var level = 100 + Math.floor(Math.random() * 40);
+      var tr = buildLogRow(name, level, formatTimestamp(new Date()));
+      addEntryToLog(tr, i === count - 1);
+    }
+    bumpStat(loggedValue, count);
+  }
+
+  document.getElementById('log-simulate').addEventListener('click', simulateLogEntry);
+  document.getElementById('log-simulate-bulk').addEventListener('click', function () { simulateBulk(50); });
+  document.getElementById('log-prev').addEventListener('click', function () {
+    if (currentPage > 0) renderPage(currentPage - 1);
+  });
+  document.getElementById('log-next').addEventListener('click', function () {
+    if (currentPage < totalPages() - 1) renderPage(currentPage + 1);
+  });
+
+  updatePagerUI();
+</script>
