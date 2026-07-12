@@ -40,7 +40,7 @@ logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
 DEMO = "--demo" in sys.argv
 HOST = "127.0.0.1"
-PORT = 5057
+PORT = 5099
 MAX_LOG_LINES = 500
 # Read-only bundled resources (templates/, static/): next to this file for a
 # source run, but inside PyInstaller's extracted temp dir for a frozen build.
