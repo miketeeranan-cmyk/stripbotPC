@@ -27,7 +27,7 @@ import sys
 import threading
 import time
 import webbrowser
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
@@ -239,6 +239,10 @@ app.secret_key = _load_or_create_secret_key()
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 # No SESSION_COOKIE_SECURE -- this app is plain http on 127.0.0.1, never TLS.
+# Flask's default "permanent" session lifetime is 31 days, which would
+# silently log the operator out on its own -- stretch it out so a login
+# only ever ends via explicit Logout, not the clock.
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=3650)
 
 
 @app.before_request
