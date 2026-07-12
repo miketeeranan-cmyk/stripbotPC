@@ -334,6 +334,15 @@
       if (d.ok) {
         sheetName = name;
         $("sheet-badge").textContent = sheetName;
+        // Each sheet has its own count/log server-side now -- clear what's
+        // painted locally so the old sheet's rows don't linger, and reset
+        // the polling cursor to 0 so the next poll re-fetches the newly
+        // selected sheet's own history from the start.
+        allLogRows.length = 0;
+        currentLogPage = 0;
+        lastLogId = 0;
+        $("stat-logged").textContent = "0";
+        renderLogPage(0);
       }
     });
     showModal("modal-switch-sheet");
@@ -520,6 +529,16 @@
     fetch("/logout", { method: "POST" }).finally(() => {
       window.location.href = "/login";
     });
+  });
+
+  // ---------------- tab close -> quit ----------------
+  // Fires on both an actual tab close and a page refresh (browsers can't
+  // tell those apart), so this doesn't quit by itself -- it just tells the
+  // server "I might be going away"; the server arms a short delayed quit
+  // that a refresh's own next request cancels before it fires. sendBeacon
+  // is used because it can still deliver mid-unload, unlike a normal fetch.
+  window.addEventListener("pagehide", () => {
+    navigator.sendBeacon("/api/tab-closing");
   });
 
   // ---------------- init ----------------

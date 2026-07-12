@@ -20,6 +20,7 @@ import logging
 import os
 import random
 import secrets
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -214,12 +215,17 @@ class AppState:
         self.needs_channel_confirm = False
         self.start_time = None
         self.quit_after_stop = False
-        self.logged_count = 0
-        # [{"id", "username", "level", "link", "timestamp"}, ...], newest last
-        self.log_entries = []
+        # Keyed by sheet name, so switching sheets shows each sheet's own
+        # running count/log instead of a single count shared across all of
+        # them -- collected data for a sheet you're not currently on stays
+        # tallied but hidden, and reappears when you switch back to it.
+        self.sheet_counts = {}  # sheet_name -> int
+        # sheet_name -> [{"id", "username", "level", "link", "timestamp"}, ...], newest last
+        self.sheet_logs = {}
         self.log_next_id = 1
         # None, or {"type": "ready_login"|"ready_switch"|"browser_error", ...}
         self.pending_prompt = None
+        self.close_timer = None  # threading.Timer pending a delayed quit, or None
 
 
 state = AppState()
@@ -240,6 +246,14 @@ def _require_login():
     """Gate every route behind a logged-in session, except the login page
     itself and static assets. API calls get a 401 JSON response (so app.js
     can redirect client-side); page loads get a straight redirect."""
+    # Any request at all -- a page load, a poll tick -- is a sign the app is
+    # still alive, so cancel a pending tab-close quit (see /api/tab-closing).
+    # This is what lets a refresh's immediate re-GET of "/" cancel the timer
+    # before it fires, while an actual tab close leaves nothing to cancel it.
+    with state.lock:
+        if state.close_timer:
+            state.close_timer.cancel()
+            state.close_timer = None
     if request.endpoint in ("login", "static"):
         return None
     if not session.get("user"):
@@ -264,9 +278,10 @@ def _append_log_entry(username: str, level: int, link: str) -> None:
     with state.lock:
         entry["id"] = state.log_next_id
         state.log_next_id += 1
-        state.log_entries.append(entry)
-        if len(state.log_entries) > MAX_LOG_LINES:
-            state.log_entries = state.log_entries[-MAX_LOG_LINES:]
+        sheet_log = state.sheet_logs.setdefault(state.sheet_name, [])
+        sheet_log.append(entry)
+        if len(sheet_log) > MAX_LOG_LINES:
+            state.sheet_logs[state.sheet_name] = sheet_log[-MAX_LOG_LINES:]
 
 
 # --------------------------------------------------------------------------
@@ -454,7 +469,6 @@ def _begin_monitoring():
         state.starting = False
         state.stop_event = threading.Event()
         state.start_time = time.time()
-        state.logged_count = 0
         stop_event = state.stop_event
         driver = state.driver
         sheet = state.worksheet
@@ -509,20 +523,46 @@ def api_quit():
     return jsonify(ok=True)
 
 
+@app.route("/api/tab-closing", methods=["POST"])
+def api_tab_closing():
+    """Sent via navigator.sendBeacon on pagehide, which fires for both a
+    real tab close and a page refresh -- there's no reliable way to tell
+    those apart client-side. So this doesn't quit immediately: it arms a
+    short delayed quit, and _require_login cancels it on the very next
+    request. A refresh's own re-GET of "/" (or resumed polling) arrives
+    well within the window and cancels it; an actual close leaves nothing
+    to cancel it, so the delayed quit goes through."""
+    with state.lock:
+        if state.close_timer:
+            state.close_timer.cancel()
+        state.close_timer = threading.Timer(3.0, _quit_gracefully)
+        state.close_timer.daemon = True
+        state.close_timer.start()
+    return jsonify(ok=True)
+
+
 def _close_launcher_terminal():
     """If launched via run_dashboard.command, that script exports
     DASHBOARD_TERMINAL_TTY so Quit can close its own Terminal window
     afterwards. This runs as a fully detached process (new session, no
     controlling terminal) so it isn't itself counted as "still running" in
     that window -- otherwise Terminal prompts to confirm terminating it
-    alongside bash. The `delay` inside the script gives bash time to finish
-    exiting first, so by the time it asks Terminal to close the window,
-    nothing is left running there to prompt about."""
+    alongside bash. Force-killing the launcher shell (DASHBOARD_LAUNCHER_PID)
+    first guarantees nothing is left "running" in that tab by the time the
+    close request arrives -- without this, bash can still be alive when the
+    delayed osascript below fires, which makes Terminal show a confirmation
+    dialog instead of just closing the window."""
     if sys.platform != "darwin":
         return
     tty_path = os.environ.get("DASHBOARD_TERMINAL_TTY")
     if not tty_path:
         return
+    launcher_pid = os.environ.get("DASHBOARD_LAUNCHER_PID")
+    if launcher_pid and launcher_pid.isdigit():
+        try:
+            os.kill(int(launcher_pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
     script = f'''
     delay 1
     tell application "Terminal"
@@ -574,14 +614,15 @@ def api_poll():
             status = "busy"
         else:
             status = "idle"
-        new_entries = [entry for entry in state.log_entries if entry["id"] > since]
-        next_since = state.log_entries[-1]["id"] if state.log_entries else since
+        current_log = state.sheet_logs.get(state.sheet_name, [])
+        new_entries = [entry for entry in current_log if entry["id"] > since]
+        next_since = current_log[-1]["id"] if current_log else since
         payload = dict(
             state=status,
             start_time=state.start_time,
             sheet_name=state.sheet_name,
             threshold=state.threshold,
-            logged_count=state.logged_count,
+            logged_count=state.sheet_counts.get(state.sheet_name, 0),
             demo=DEMO,
             monitoring=state.monitoring,
             prompt=state.pending_prompt,
@@ -596,7 +637,7 @@ def api_poll():
 # --------------------------------------------------------------------------
 def _record_new_user():
     with state.lock:
-        state.logged_count += 1
+        state.sheet_counts[state.sheet_name] = state.sheet_counts.get(state.sheet_name, 0) + 1
 
 
 def _on_monitoring_stopped():
@@ -696,7 +737,7 @@ def _run_demo_loop(stop_event: threading.Event) -> None:
         link = f"https://stripchat.com/{username}"
         _append_log_entry(username, level, link)
         with state.lock:
-            state.logged_count += 1
+            state.sheet_counts[state.sheet_name] = state.sheet_counts.get(state.sheet_name, 0) + 1
     _on_monitoring_stopped()
 
 

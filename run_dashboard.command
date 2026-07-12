@@ -16,4 +16,9 @@ source venv/bin/activate
 # from here instead would still have bash/osascript attached to this window
 # at close time, which makes Terminal prompt to confirm terminating them.
 export DASHBOARD_TERMINAL_TTY="$(tty)"
+# Lets Quit force-kill this shell before asking Terminal to close the
+# window -- otherwise this process can still be "running" in the tab when
+# the close request arrives, which makes Terminal show a confirmation
+# dialog instead of just closing.
+export DASHBOARD_LAUNCHER_PID="$$"
 python3 dashboard.py
