@@ -44,7 +44,7 @@ MAX_LOG_LINES = 500
 # static/js/i18n.js does the lookup/formatting. The server never localizes.
 # --------------------------------------------------------------------------
 STRINGS = {
-    "app_title": {"en": "STRIPCHAT TRACKER", "zh": "STRIPCHAT 追踪器"},
+    "app_title": {"en": "Stripchat User Tracker", "zh": "Stripchat 用户追踪器"},
     "connecting": {"en": "Connecting to Google Sheets...", "zh": "正在连接 Google Sheets..."},
     "demo_mode": {"en": "Demo mode — no Google account needed", "zh": "演示模式 — 无需 Google 账号"},
     "select_sheet": {"en": "Select a sheet/tab to log to:", "zh": "选择要记录到的工作表/标签页："},
@@ -104,12 +104,15 @@ STRINGS = {
     "lang_prompt": {"en": "Choose your language", "zh": "选择语言"},
     "lang_english": {"en": "English", "zh": "English"},
     "lang_chinese": {"en": "中文 (Chinese)", "zh": "中文 (Chinese)"},
-    "lang_btn": {"en": "中文", "zh": "English"},
+    "lang_btn": {"en": "中文", "zh": "ENG"},
     "activity_log": {"en": "Activity Log", "zh": "活动日志"},
     "link_label": {"en": "Link", "zh": "链接"},
     "field_username": {"en": "Username", "zh": "用户名"},
     "field_level": {"en": "Level", "zh": "等级"},
     "field_time": {"en": "Time", "zh": "时间"},
+    "prev_btn": {"en": "Prev", "zh": "上一页"},
+    "next_btn": {"en": "Next", "zh": "下一页"},
+    "page_of": {"en": "Page {x} of {y}", "zh": "第 {x} / {y} 页"},
 }
 
 
@@ -169,7 +172,7 @@ def _append_log_entry(username: str, level: int, link: str) -> None:
         "username": username,
         "level": level,
         "link": link or "",
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
     with state.lock:
         entry["id"] = state.log_next_id

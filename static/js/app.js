@@ -10,6 +10,7 @@
   let lastLogId = 0;
   let activePromptKey = null; // dedupes re-showing the same pending prompt every poll
   let pollTimer = null;
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const $ = (id) => document.getElementById(id);
 
@@ -20,14 +21,14 @@
   }
 
   function showModal(id) {
-    $("overlay").classList.remove("hidden");
-    $(id).classList.remove("hidden");
+    $("overlay").classList.add("visible");
+    $(id).classList.add("visible");
   }
 
   function hideModal(id) {
-    $(id).classList.add("hidden");
-    if (!document.querySelector(".modal:not(.hidden)")) {
-      $("overlay").classList.add("hidden");
+    $(id).classList.remove("visible");
+    if (!document.querySelector(".modal.visible")) {
+      $("overlay").classList.remove("visible");
     }
   }
 
@@ -121,6 +122,13 @@
     }
   }
 
+  function bumpElement(el) {
+    if (reduceMotion) return;
+    el.classList.remove("stat-bump");
+    void el.offsetWidth;
+    el.classList.add("stat-bump");
+  }
+
   function applyPoll(data) {
     sheetName = data.sheet_name;
     threshold = data.threshold;
@@ -129,10 +137,14 @@
     lastLogId = data.next_since;
     $("sheet-badge").textContent = sheetName;
     $("stat-threshold").textContent = `Lv ${threshold}+`;
-    $("stat-logged").textContent = String(data.logged_count);
+    const loggedEl = $("stat-logged");
+    if (String(data.logged_count) !== loggedEl.textContent) {
+      loggedEl.textContent = String(data.logged_count);
+      bumpElement(loggedEl);
+    }
     setStatus(data.state);
     setControlsEnabled(monitoring);
-    (data.log || []).forEach((entry) => appendLogEntry(entry));
+    (data.log || []).forEach((entry) => addLogEntry(entry));
     handlePrompt(data.prompt);
   }
 
@@ -163,18 +175,32 @@
   }, 1000);
 
   // ---------------- dashboard: activity log table (Username / Level / Link / Time) ----------------
+  // Paginated 200 rows/page: the tbody only ever holds the page being viewed
+  // (everything else stays in `allLogRows`), so a long-running session never
+  // stretches the page -- the log box itself scrolls, and paging is
+  // "smart-follow": if you're watching the newest page live, new pages
+  // appear and the view follows onto them; if you've paged back to review
+  // older entries, your view is left alone and the new page just becomes
+  // reachable via Next.
+  const LOG_PAGE_SIZE = 200;
+  const allLogRows = [];
+  let currentLogPage = 0;
+
   function td(node) {
     const cell = document.createElement("td");
     cell.appendChild(typeof node === "string" ? document.createTextNode(node) : node);
     return cell;
   }
 
-  function appendLogEntry(entry) {
-    const tbody = $("log-output");
+  function buildLogRow(entry) {
     const tr = document.createElement("tr");
 
     tr.appendChild(td(entry.username));
-    tr.appendChild(td(String(entry.level)));
+
+    const levelChip = document.createElement("span");
+    levelChip.className = "level-chip " + (entry.level >= threshold * 2 ? "high" : "mid");
+    levelChip.textContent = String(entry.level);
+    tr.appendChild(td(levelChip));
 
     let linkNode;
     if (entry.link && /^https?:\/\//i.test(entry.link)) {
@@ -191,11 +217,80 @@
     }
     tr.appendChild(td(linkNode));
     tr.appendChild(td(entry.timestamp));
-
-    tbody.appendChild(tr);
-    const wrap = document.querySelector(".log-table-wrap");
-    wrap.scrollTop = wrap.scrollHeight;
+    return tr;
   }
+
+  function totalLogPages() {
+    return Math.max(1, Math.ceil(allLogRows.length / LOG_PAGE_SIZE));
+  }
+
+  function updateLogPagerUI() {
+    const pages = totalLogPages();
+    $("log-pager").classList.toggle("hidden", pages <= 1);
+    $("log-pager-label").textContent = t(lang, "page_of", { x: currentLogPage + 1, y: pages });
+    $("log-prev-btn").disabled = currentLogPage <= 0;
+    $("log-next-btn").disabled = currentLogPage >= pages - 1;
+  }
+
+  function renderLogPage(pageIndex) {
+    // Flip the page state + pager label immediately so a fast run of
+    // addLogEntry calls always sees the real current page -- only the
+    // visual row swap below is what's faded/delayed.
+    currentLogPage = pageIndex;
+    updateLogPagerUI();
+
+    const wrap = document.querySelector(".log-table-wrap");
+    const tbody = $("log-output");
+
+    function paint() {
+      tbody.innerHTML = "";
+      const start = pageIndex * LOG_PAGE_SIZE;
+      allLogRows.slice(start, start + LOG_PAGE_SIZE).forEach((tr) => tbody.appendChild(tr));
+      wrap.classList.remove("fading");
+    }
+
+    if (reduceMotion) {
+      paint();
+    } else {
+      wrap.classList.add("fading");
+      setTimeout(paint, 140);
+    }
+  }
+
+  function flashNewRow(tr) {
+    if (reduceMotion) return;
+    tr.classList.add("row-enter");
+    setTimeout(() => tr.classList.remove("row-enter"), 1650);
+  }
+
+  function addLogEntry(entry) {
+    const wasOnLastPage = currentLogPage === totalLogPages() - 1;
+    const tr = buildLogRow(entry);
+    allLogRows.push(tr);
+    const rowPageIndex = Math.floor((allLogRows.length - 1) / LOG_PAGE_SIZE);
+
+    if (rowPageIndex === currentLogPage) {
+      const tbody = $("log-output");
+      tbody.appendChild(tr);
+      const wrap = document.querySelector(".log-table-wrap");
+      wrap.scrollTop = wrap.scrollHeight;
+      flashNewRow(tr);
+      updateLogPagerUI();
+    } else if (wasOnLastPage) {
+      renderLogPage(rowPageIndex);
+      setTimeout(() => flashNewRow(tr), 180);
+    } else {
+      updateLogPagerUI();
+    }
+  }
+
+  $("log-prev-btn").addEventListener("click", () => {
+    if (currentLogPage > 0) renderLogPage(currentLogPage - 1);
+  });
+  $("log-next-btn").addEventListener("click", () => {
+    if (currentLogPage < totalLogPages() - 1) renderLogPage(currentLogPage + 1);
+  });
+  updateLogPagerUI();
 
   // ---------------- dashboard: start / stop ----------------
   $("start-btn").addEventListener("click", async () => {
@@ -339,11 +434,52 @@
   }
 
   // ---------------- language toggle + quit ----------------
+  function switchLanguage(newLang) {
+    const shell = document.querySelector(".shell");
+    function apply() {
+      lang = newLang;
+      applyI18n(lang);
+      setStatus(statusState);
+      $("stat-threshold").textContent = `Lv ${threshold}+`;
+      updateLogPagerUI();
+    }
+    if (reduceMotion) {
+      apply();
+      return;
+    }
+    shell.classList.add("fading");
+    setTimeout(() => {
+      apply();
+      shell.classList.remove("fading");
+    }, 140);
+  }
+
   $("lang-btn").addEventListener("click", () => {
-    lang = lang === "en" ? "zh" : "en";
-    applyI18n(lang);
-    setStatus(statusState);
-    $("stat-threshold").textContent = `Lv ${threshold}+`;
+    switchLanguage(lang === "en" ? "zh" : "en");
+  });
+
+  // ---------------- theme toggle (manual override on top of prefers-color-scheme) ----------------
+  function effectiveThemeIsDark() {
+    const current = document.documentElement.getAttribute("data-theme");
+    if (current) return current === "dark";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+
+  function updateThemeIcon() {
+    $("theme-toggle").textContent = effectiveThemeIsDark() ? "☀️" : "🌙";
+  }
+
+  const storedTheme = localStorage.getItem("theme");
+  if (storedTheme === "light" || storedTheme === "dark") {
+    document.documentElement.setAttribute("data-theme", storedTheme);
+  }
+  updateThemeIcon();
+
+  $("theme-toggle").addEventListener("click", () => {
+    const next = effectiveThemeIsDark() ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("theme", next);
+    updateThemeIcon();
   });
 
   $("quit-btn").addEventListener("click", () => {

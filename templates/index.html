@@ -36,7 +36,12 @@
       <header class="topbar">
         <h1 data-i18n="app_title"></h1>
         <span class="status-pill status-idle" id="status-pill"></span>
-        <span class="sheet-badge" id="sheet-badge"></span>
+        <div class="topbar-right">
+          <span class="sheet-badge" id="sheet-badge"></span>
+          <button class="chip-btn" id="lang-btn" type="button" data-i18n="lang_btn"></button>
+          <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle theme">🌙</button>
+          <button class="icon-btn icon-btn-error" id="quit-btn" type="button" aria-label="Quit" title="Quit">⏻</button>
+        </div>
       </header>
 
       <div class="stats-row">
@@ -59,12 +64,12 @@
       </div>
 
       <div class="controls">
-        <button class="btn btn-success" id="start-btn" data-i18n="start_btn"></button>
+        <button class="btn btn-primary" id="start-btn" data-i18n="start_btn"></button>
         <button class="btn btn-error" id="stop-btn" data-i18n="stop_btn" disabled></button>
-        <button class="btn" id="switch-btn" data-i18n="switch_sheet_btn"></button>
-        <button class="btn" id="threshold-btn" data-i18n="threshold_btn"></button>
-        <button class="btn" id="lang-btn" data-i18n="lang_btn"></button>
-        <button class="btn btn-error" id="quit-btn" data-i18n="quit_btn"></button>
+        <div class="controls-right">
+          <button class="btn" id="switch-btn" data-i18n="switch_sheet_btn"></button>
+          <button class="btn" id="threshold-btn" data-i18n="threshold_btn"></button>
+        </div>
       </div>
 
       <div class="log-panel" id="log-panel">
@@ -82,24 +87,29 @@
             <tbody id="log-output"></tbody>
           </table>
         </div>
+        <div class="log-pager hidden" id="log-pager">
+          <button class="btn" id="log-prev-btn" type="button" disabled>&larr; <span data-i18n="prev_btn"></span></button>
+          <span class="log-pager-label" id="log-pager-label"></span>
+          <button class="btn" id="log-next-btn" type="button" disabled><span data-i18n="next_btn"></span> &rarr;</button>
+        </div>
       </div>
     </div>
   </section>
 
-  <div class="overlay hidden" id="overlay"></div>
+  <div class="overlay" id="overlay"></div>
 
-  <div class="modal hidden" id="modal-ready">
+  <div class="modal" id="modal-ready">
     <div class="card">
       <h2 id="ready-title"></h2>
       <p id="ready-body"></p>
       <div class="modal-buttons">
-        <button class="btn btn-success" id="ready-confirm-btn" data-i18n="ready"></button>
+        <button class="btn btn-primary" id="ready-confirm-btn" data-i18n="ready"></button>
         <button class="btn btn-error" id="ready-cancel-btn" data-i18n="cancel"></button>
       </div>
     </div>
   </div>
 
-  <div class="modal hidden" id="modal-switch-sheet">
+  <div class="modal" id="modal-switch-sheet">
     <div class="card">
       <h2 data-i18n="switch_sheet_title"></h2>
       <div class="option-list" id="switch-list"></div>
@@ -109,20 +119,20 @@
     </div>
   </div>
 
-  <div class="modal hidden" id="modal-threshold">
+  <div class="modal" id="modal-threshold">
     <div class="card">
       <h2 data-i18n="threshold_modal_title"></h2>
       <p data-i18n="threshold_modal_body"></p>
       <input type="number" id="threshold-input" min="1" step="1">
       <div class="error hidden" id="threshold-error"></div>
       <div class="modal-buttons">
-        <button class="btn btn-success" id="threshold-apply-btn" data-i18n="apply_btn"></button>
+        <button class="btn btn-primary" id="threshold-apply-btn" data-i18n="apply_btn"></button>
         <button class="btn btn-error" id="threshold-cancel-btn" data-i18n="cancel"></button>
       </div>
     </div>
   </div>
 
-  <div class="modal hidden" id="modal-confirm">
+  <div class="modal" id="modal-confirm">
     <div class="card">
       <h2 data-i18n="confirm_title"></h2>
       <p id="confirm-message"></p>
