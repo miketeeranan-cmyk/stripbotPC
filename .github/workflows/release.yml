@@ -1,9 +1,21 @@
 name: Release
 
-# Push a tag like v1.2.3 to build the desktop app for macOS + Windows and
-# publish it as a GitHub Release. launcher.py polls the "latest release" API
-# on every launch and pulls whichever platform asset matches, so a tag push
-# here is what actually reaches the operator's machine.
+# Push a tag like v1.2.3 to build the desktop app for Windows and publish it
+# as a GitHub Release. launcher.py polls the "latest release" API on every
+# launch and pulls whichever platform asset matches, so a tag push here is
+# what actually reaches the operator's machine.
+#
+# macOS is deliberately NOT built here. GitHub removed the Intel-hosted
+# macos-13 image from its runner fleet, and the arm64 macos-latest
+# replacement can't reliably produce a working x86_64 build for the
+# operator's Intel Mac: macos-13 jobs queue forever instead of failing,
+# setup-python's architecture: x64 silently falls back to native arm64,
+# python.org's universal2 build lets pip pick arm64-only wheels for
+# compiled deps (broke on cryptography's _rust.abi3.so), and even
+# bootstrapping a genuine x86_64-only Python via Rosetta + a fresh
+# x86_64-side Homebrew got this far without a working build in several
+# attempts. Revisit macOS releases if that operator hardware changes or
+# GitHub brings back an Intel-hosted image.
 
 on:
   push:
@@ -15,81 +27,34 @@ permissions:
 
 jobs:
   build:
-    strategy:
-      matrix:
-        # macos-13 (the last Intel-hosted macOS image) is gone from GitHub's
-        # runner fleet -- jobs requesting it now queue forever instead of
-        # failing outright. macos-latest is Apple Silicon (arm64), which
-        # won't run on the operator's Intel Mac at all, so the mac leg needs
-        # a genuine x86_64 Python. A universal2 build (e.g. python.org's
-        # installer) does NOT work for this: pip's wheel-tag resolution
-        # looks at the interpreter's declared "universal2" platform rather
-        # than which slice is actually executing under Rosetta, so it can
-        # silently pick an arm64-only wheel (confirmed: it did, for
-        # cryptography's compiled extension, breaking the PyInstaller
-        # build with IncompatibleBinaryArchError). Bootstrapping a second,
-        # x86_64-side Homebrew under Rosetta at /usr/local (separate from
-        # the runner's native arm64 one at /opt/homebrew) avoids the
-        # ambiguity entirely -- its python@3.12 bottle is single-arch
-        # x86_64, so pip can't see arm64 wheels at all. Confirmed the
-        # current macos-latest (mac26) image does NOT ship /usr/local/bin/brew
-        # pre-installed like older images used to -- it has to be bootstrapped
-        # fresh every run. setup-python's architecture: x64 also doesn't work
-        # here -- its mac
-        # manifest doesn't reliably have x64-only 3.12 builds, and it
-        # silently falls back to the runner's native arm64 python instead of
-        # erroring. Switch back to a plain macos-13 pin if GitHub ever
-        # brings Intel hosted runners back.
-        os: [macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Determine python invocation
-        id: py
-        shell: bash
-        run: |
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            echo "bin=arch -x86_64 /usr/local/bin/python3.12" >> "$GITHUB_OUTPUT"
-          else
-            echo "bin=python" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Install Rosetta 2 + x86_64 Homebrew Python (mac only)
-        if: runner.os == 'macOS'
-        env:
-          NONINTERACTIVE: "1"
-        run: |
-          softwareupdate --install-rosetta --agree-to-license
-          arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          arch -x86_64 /usr/local/bin/brew install python@3.12
-          ${{ steps.py.outputs.bin }} -c "import platform; assert platform.machine() == 'x86_64', platform.machine()"
-
       - uses: actions/setup-python@v5
-        if: runner.os != 'macOS'
         with:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: ${{ steps.py.outputs.bin }} -m pip install -r requirements.txt -r requirements-build.txt
+        run: pip install -r requirements.txt -r requirements-build.txt
 
       # Build + package one target at a time -- PyInstaller's --clean can
       # wipe dist/'s other target, so don't build both before packaging
       # either.
       - name: Build + package core app
         run: |
-          ${{ steps.py.outputs.bin }} packaging/build.py --core
-          ${{ steps.py.outputs.bin }} packaging/package_release.py --core
+          python packaging/build.py --core
+          python packaging/package_release.py --core
 
       - name: Build + package launcher
         run: |
-          ${{ steps.py.outputs.bin }} packaging/build.py --launcher
-          ${{ steps.py.outputs.bin }} packaging/package_release.py --launcher
+          python packaging/build.py --launcher
+          python packaging/package_release.py --launcher
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-${{ matrix.os }}
+          name: build-windows-latest
           path: |
             StripTrackerCore-*.zip
             StripTracker-*.zip
