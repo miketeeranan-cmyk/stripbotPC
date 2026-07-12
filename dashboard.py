@@ -774,7 +774,16 @@ if __name__ == "__main__":
             window = webview.create_window("StripTracker", f"http://{HOST}:{PORT}")
             # *_ tolerates whatever args this pywebview version's closed event passes
             window.events.closed += lambda *_: _quit_gracefully()
-            webview.start()
+            # pywebview defaults to private_mode=True (cookies/local storage
+            # wiped on every close, like an incognito window) -- that alone
+            # was silently overriding the Flask session's own persistence.
+            # storage_path is pinned into APP_DATA_DIR (not the frozen exe's
+            # own folder) so login also survives auto-update swapping in a
+            # fresh versions/<tag>/ folder.
+            webview.start(
+                private_mode=False,
+                storage_path=os.path.join(APP_DATA_DIR, "webview_data"),
+            )
         except Exception:
             import traceback
 
