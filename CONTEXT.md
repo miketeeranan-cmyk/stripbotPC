@@ -81,3 +81,52 @@ one-time migration in `setup_users.py` imports a pre-database `users.json` into
 `.flask_secret`, auto-generated on first run. Like `credentials.json`, the
 master password, salt, Fernet tokens, hashes, and decrypted passwords may never
 be printed/committed/logged or returned from `/api/poll`.
+
+### Packaging & auto-update (desktop distribution)
+
+The tracker is distributed to a non-technical single operator as a packaged
+desktop app, not a hosted service — it needs a real, clickable Chrome window
+and a long-lived background poll loop, which rules out serverless/PaaS
+hosting (Vercel, Firebase, Cloud Functions, Cloud Run's free tier) at any
+price point. Running only "while the operator is at their computer" (not
+24/7) removes the need for a server entirely.
+
+`get_app_data_dir()` (`stripchat_level_tracker.py`) is the seam: source runs
+resolve to the repo dir unchanged (`BASE_DIR`); a frozen PyInstaller build
+resolves to an OS-appropriate per-user writable directory
+(`~/Library/Application Support/StripTracker` / `%APPDATA%\StripTracker`),
+since a signed `.app` bundle is often read-only. `credentials.json`,
+`users.db`, and `.flask_secret` all live there in a frozen build — you (admin)
+still hand-provision `credentials.json`/`users.db` once, out-of-band, same as
+today, just copied to that path instead of the repo root. `dashboard.py`'s own
+`BASE_DIR` const is repurposed as the *read-only bundled resource* dir
+(`sys._MEIPASS` when frozen) for `templates/`/`static/`, passed explicitly to
+`Flask(...)` — do not conflate the two; app data must stay writable and
+resource files must stay bundled.
+
+Two separate PyInstaller builds (`packaging/build.py`):
+- **`StripTrackerCore`** — `dashboard.py` + `templates/`/`static/`. This is
+  the actual app; it's what gets replaced on every update.
+- **`StripTracker`** (from `launcher.py`) — the thing the operator actually
+  double-clicks. Installed once by hand; almost never rebuilt, since it isn't
+  part of the auto-update payload itself.
+
+`launcher.py` runs on every launch: check the repo's public
+`GET /repos/.../releases/latest` API (unauthenticated — the repo is public
+specifically so this needs no token), compare the release tag against
+`current_version.txt` in the app-data dir, and if newer, download the
+platform's zip asset (`StripTrackerCore-mac.zip` / `-windows.zip`), extract
+into a fresh `versions/<tag>/` folder, flip `current_version.txt`, and launch
+from there. Any failure (offline, GitHub unreachable) is swallowed — an
+update check must never block a launch; only a genuine first-run-with-no-
+internet (nothing installed at all) surfaces a message. There is no baked-in
+`VERSION` file — the pushed git tag *is* the version, compared directly
+against each release's `tag_name`.
+
+`.github/workflows/release.yml`: pushing a tag matching `v*.*.*` builds both
+platforms on a `macos-latest`/`windows-latest` matrix
+(`packaging/build.py --core` → `packaging/package_release.py`, which zips the
+build so the archive's top-level entry is exactly the `.app`/folder
+`launcher.py`'s `find_executable()` expects) and publishes them as release
+assets. That tag push is the entire deploy step — the operator's app updates
+itself on their next launch with no manual build or distribution.

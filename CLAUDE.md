@@ -16,6 +16,7 @@ design) is in `CONTEXT.md` — read it when the task touches those areas.
 python dashboard.py            # web dashboard, real mode — needs credentials.json + Chrome
 python dashboard.py --demo     # web dashboard, demo mode — fake data, no Selenium/Google
 python stripchat_level_tracker.py   # headless CLI, same core logic
+python packaging/build.py      # build the desktop app + launcher (PyInstaller)
 ```
 
 - Dashboard serves on `127.0.0.1:5057` and auto-opens a browser tab.
@@ -38,3 +39,8 @@ python stripchat_level_tracker.py   # headless CLI, same core logic
 - **Login gate**: every route (real and `--demo`) is gated by session login
   via `@app.before_request`. See `CONTEXT.md` for the `users.db` /
   `setup_users.py` design.
+- **Desktop packaging/auto-update**: the operator runs a PyInstaller build,
+  not source. `get_app_data_dir()` (in `core`) is the seam between dev-mode
+  paths and the frozen build's per-user app-data dir — route any new
+  read/write of a secret or local file through it. See `CONTEXT.md` for the
+  full launcher/release-pipeline design.

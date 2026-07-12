@@ -12,6 +12,8 @@ BEFORE RUNNING:
 4. Fill in your Stripchat login email/password (or log in manually when the browser opens)
 """
 
+import os
+import sys
 import time
 from datetime import datetime
 
@@ -59,6 +61,27 @@ POPUP_LINK_MAX_ATTEMPTS = 3
 # before giving up on filling in the link.
 LINK_FIXUP_MAX_CYCLES = 5
 
+# ---------------- APP DATA DIRECTORY ----------------
+def get_app_data_dir() -> str:
+    """Where user-writable app files (credentials.json, users.db,
+    .flask_secret) live. Source/dev runs keep everything next to this file,
+    same as before. A frozen PyInstaller build's own folder is often
+    read-only (especially a signed macOS .app bundle), so that case uses a
+    per-user OS data directory instead."""
+    if getattr(sys, "frozen", False):
+        if sys.platform == "darwin":
+            base = os.path.expanduser("~/Library/Application Support")
+        elif sys.platform == "win32":
+            base = os.environ.get("APPDATA", os.path.expanduser("~"))
+        else:
+            base = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
+        path = os.path.join(base, "StripTracker")
+    else:
+        path = os.path.dirname(os.path.abspath(__file__))
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
 # ---------------- GOOGLE SHEETS SETUP ----------------
 def choose_worksheet(spreadsheet):
     """Ask the user which tab/worksheet to log to, showing the real tab names
@@ -84,7 +107,8 @@ def connect_to_sheet():
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive",
     ]
-    creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+    creds_path = os.path.join(get_app_data_dir(), "credentials.json")
+    creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
     client = gspread.authorize(creds)
     spreadsheet = client.open(SHEET_NAME)
     sheet = choose_worksheet(spreadsheet)

@@ -42,9 +42,12 @@ DEMO = "--demo" in sys.argv
 HOST = "127.0.0.1"
 PORT = 5057
 MAX_LOG_LINES = 500
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-USERS_DB = os.path.join(BASE_DIR, "users.db")
-SECRET_KEY_FILE = os.path.join(BASE_DIR, ".flask_secret")
+# Read-only bundled resources (templates/, static/): next to this file for a
+# source run, but inside PyInstaller's extracted temp dir for a frozen build.
+BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+APP_DATA_DIR = core.get_app_data_dir()
+USERS_DB = os.path.join(APP_DATA_DIR, "users.db")
+SECRET_KEY_FILE = os.path.join(APP_DATA_DIR, ".flask_secret")
 
 # --------------------------------------------------------------------------
 # Login gate -- credentials live only as salted hashes in a gitignored
@@ -209,7 +212,11 @@ class AppState:
 
 state = AppState()
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, "templates"),
+    static_folder=os.path.join(BASE_DIR, "static"),
+)
 app.secret_key = _load_or_create_secret_key()
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -301,7 +308,16 @@ def api_connect():
             "https://spreadsheets.google.com/feeds",
             "https://www.googleapis.com/auth/drive",
         ]
-        creds = core.ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+        creds_path = os.path.join(APP_DATA_DIR, "credentials.json")
+        if not os.path.isfile(creds_path):
+            return jsonify(
+                ok=False,
+                error=(
+                    "No credentials.json found. Place your Google service-account "
+                    f"JSON file at:\n{creds_path}\nthen try again."
+                ),
+            )
+        creds = core.ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
         client = core.gspread.authorize(creds)
         spreadsheet = client.open(core.SHEET_NAME)
         names = [ws.title for ws in spreadsheet.worksheets()]

@@ -26,6 +26,11 @@ env/
 .DS_Store
 Thumbs.db
 
+# PyInstaller build output (see packaging/build.py)
+build/
+dist/
+*.spec
+
 # Logs
 run_output.log
 tab_input.txt

@@ -1,0 +1,56 @@
+name: Release
+
+# Push a tag like v1.2.3 to build the desktop app for macOS + Windows and
+# publish it as a GitHub Release. launcher.py polls the "latest release" API
+# on every launch and pulls whichever platform asset matches, so a tag push
+# here is what actually reaches the operator's machine.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-build.txt
+
+      - name: Build core app
+        run: python packaging/build.py --core
+
+      - name: Package release asset
+        run: python packaging/package_release.py
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.os }}
+          path: StripTrackerCore-*.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*/*.zip
+          generate_release_notes: true
