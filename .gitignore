@@ -32,6 +32,8 @@ dist/
 *.spec
 /StripTracker-*.zip
 /StripTrackerCore-*.zip
+# Chromedriver fetched by release.yml at CI build time (see packaging/build.py)
+/packaging/bundled_driver/
 
 # Logs
 run_output.log

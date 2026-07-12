@@ -250,25 +250,52 @@ def get_profile_link_via_popup(driver, row, username):
     return href
 
 
+def _bundled_chromedriver_path():
+    """Path to a chromedriver binary shipped inside the frozen build itself
+    (fetched at CI build time, see .github/workflows/release.yml), or None
+    if this isn't a build that bundled one (e.g. a source/dev run). Using
+    this needs no network access at all on the operator's machine -- both
+    webdriver_manager and Selenium Manager have to reach an external host
+    to resolve a driver, which fails outright on a PC with a restrictive
+    firewall or no internet access, even though Chrome itself is fine."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    name = "chromedriver.exe" if sys.platform == "win32" else "chromedriver"
+    path = os.path.join(base, "bundled_driver", name)
+    return path if os.path.isfile(path) else None
+
+
 # ---------------- BROWSER SETUP ----------------
 def start_browser():
     options = webdriver.ChromeOptions()
     options.add_argument("--start-maximized")
     # Keep the window open so you can manually log in the first time
     options.add_experimental_option("detach", True)
+    errors = []
+    bundled = _bundled_chromedriver_path()
+    if bundled:
+        try:
+            return _open(Service(bundled), options)
+        except Exception as e:
+            errors.append(e)
     try:
-        # Primary path: webdriver_manager checks/downloads a matching
-        # chromedriver from its own endpoint.
-        driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()), options=options
-        )
-    except Exception:
-        # Fall back to Selenium's own bundled driver resolution (Selenium
-        # Manager, selenium>=4.6) -- it hits a different endpoint and also
-        # checks for a chromedriver already on PATH or already cached, so it
-        # can succeed on machines where webdriver_manager's endpoint is
-        # blocked or unreachable (firewalls, some corporate/VPN networks).
-        driver = webdriver.Chrome(options=options)
+        # webdriver_manager checks/downloads a matching chromedriver from
+        # its own endpoint.
+        return _open(Service(ChromeDriverManager().install()), options)
+    except Exception as e:
+        errors.append(e)
+    try:
+        # Selenium's own bundled driver resolution (Selenium Manager,
+        # selenium>=4.6) -- hits a different endpoint and also checks for a
+        # chromedriver already on PATH or already cached, so it can succeed
+        # where webdriver_manager's endpoint can't be reached.
+        return _open(None, options)
+    except Exception as e:
+        errors.append(e)
+    raise errors[-1]
+
+
+def _open(service, options):
+    driver = webdriver.Chrome(service=service, options=options) if service else webdriver.Chrome(options=options)
     driver.get(DASHBOARD_URL)
     return driver
 

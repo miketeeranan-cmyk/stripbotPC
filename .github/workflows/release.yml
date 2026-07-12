@@ -38,6 +38,23 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt -r requirements-build.txt
 
+      # Fetches a chromedriver matching this runner's Chrome and stashes it
+      # at packaging/bundled_driver/ so build.py bundles it into the app.
+      # This is what lets Start work on an operator PC with no internet
+      # access (or a firewall blocking driver-resolution endpoints) --
+      # the CI runner has internet, the operator's PC might not.
+      - name: Fetch bundled chromedriver
+        shell: python
+        run: |
+          import os
+          import shutil
+          from webdriver_manager.chrome import ChromeDriverManager
+
+          src = ChromeDriverManager().install()
+          dest_dir = os.path.join("packaging", "bundled_driver")
+          os.makedirs(dest_dir, exist_ok=True)
+          shutil.copy(src, os.path.join(dest_dir, "chromedriver.exe"))
+
       # Build + package one target at a time -- PyInstaller's --clean can
       # wipe dist/'s other target, so don't build both before packaging
       # either.
