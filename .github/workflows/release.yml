@@ -27,12 +27,15 @@ jobs:
         # than which slice is actually executing under Rosetta, so it can
         # silently pick an arm64-only wheel (confirmed: it did, for
         # cryptography's compiled extension, breaking the PyInstaller
-        # build with IncompatibleBinaryArchError). Using the x86_64-side
-        # Homebrew that GitHub's arm64 runner images ship pre-installed at
-        # /usr/local (separate from the native arm64 one at /opt/homebrew)
-        # avoids the ambiguity entirely -- its python@3.12 bottle is
-        # single-arch x86_64, so pip can't see arm64 wheels at all.
-        # setup-python's architecture: x64 also doesn't work here -- its mac
+        # build with IncompatibleBinaryArchError). Bootstrapping a second,
+        # x86_64-side Homebrew under Rosetta at /usr/local (separate from
+        # the runner's native arm64 one at /opt/homebrew) avoids the
+        # ambiguity entirely -- its python@3.12 bottle is single-arch
+        # x86_64, so pip can't see arm64 wheels at all. Confirmed the
+        # current macos-latest (mac26) image does NOT ship /usr/local/bin/brew
+        # pre-installed like older images used to -- it has to be bootstrapped
+        # fresh every run. setup-python's architecture: x64 also doesn't work
+        # here -- its mac
         # manifest doesn't reliably have x64-only 3.12 builds, and it
         # silently falls back to the runner's native arm64 python instead of
         # erroring. Switch back to a plain macos-13 pin if GitHub ever
@@ -54,8 +57,11 @@ jobs:
 
       - name: Install Rosetta 2 + x86_64 Homebrew Python (mac only)
         if: runner.os == 'macOS'
+        env:
+          NONINTERACTIVE: "1"
         run: |
           softwareupdate --install-rosetta --agree-to-license
+          arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
           arch -x86_64 /usr/local/bin/brew install python@3.12
           ${{ steps.py.outputs.bin }} -c "import platform; assert platform.machine() == 'x86_64', platform.machine()"
 
