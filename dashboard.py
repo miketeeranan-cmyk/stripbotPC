@@ -722,10 +722,20 @@ if __name__ == "__main__":
         except Exception:
             import traceback
 
+            tb = traceback.format_exc()
             try:
                 with open(os.path.join(APP_DATA_DIR, "crash.log"), "a") as f:
                     f.write(f"\n--- {datetime.now().isoformat()} ---\n")
-                    f.write(traceback.format_exc())
+                    f.write(tb)
+            except Exception:
+                pass
+            # If a console is attached (temporary diagnostic build), print +
+            # pause so the window doesn't vanish before it can be read. In a
+            # normal --windowed build there's no stdin, so input() fails
+            # immediately and this is a no-op.
+            try:
+                print(tb)
+                input("StripTracker crashed -- press Enter to close this window...")
             except Exception:
                 pass
         os._exit(0)  # no graceful shutdown, same as Quit

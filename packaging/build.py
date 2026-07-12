@@ -56,7 +56,13 @@ def build_core():
             "PyInstaller",
             "--noconfirm",
             "--clean",
-            "--windowed",
+            # TEMPORARY: --console instead of --windowed for one diagnostic
+            # release -- the operator's Windows PC fails to open the
+            # dashboard with nothing in crash.log, which points at a
+            # native-level failure (pywebview/pythonnet/WebView2) below
+            # Python's own exception handling. A console makes that visible.
+            # Revert to --windowed once the real cause is found.
+            "--console",
             "--onedir",
             "--name",
             "StripTrackerCore",
