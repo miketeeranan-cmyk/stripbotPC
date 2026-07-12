@@ -76,3 +76,23 @@ python stripchat_level_tracker.py   # headless CLI, same core logic
   stops finding users.
 - `credentials.json` is gitignored — never print/commit/log it, or anything
   appended to `log_entries`/returned from `/api/poll`.
+- **Login gate**: every route (both real and `--demo` mode — same code
+  paths) is gated by a session login via `@app.before_request`, checking
+  `session.get("user")`; unauthenticated `/api/*` calls get a 401 JSON
+  response, everything else redirects to `/login`. Credentials live in a
+  gitignored SQLite database, `users.db`, with a `master(id=1, salt,
+  check_token)` singleton row and a `users(username, hash, enc)` table —
+  the dashboard only ever reads each user's `hash` (via `_load_users()`) to
+  verify logins. `setup_users.py` is a master-password-gated admin tool
+  (never run automatically): first run sets a master password + the users;
+  later runs require the master password (PBKDF2 → Fernet key, verified by
+  decrypting `master.check_token`) to view all passwords, reset one user,
+  or change the master password. `enc` is each password encrypted under the
+  master key so only the master can view it; needs the `cryptography` lib
+  (used only by `setup_users.py`, not the dashboard). A one-time migration
+  in `setup_users.py` imports a pre-database `users.json` into `users.db`
+  on first run after the switch, then renames it out of the way
+  (`.migrated`/`.old-format`). The session signing key lives in gitignored
+  `.flask_secret`, auto-generated on first run. Like `credentials.json`,
+  the master password, salt, Fernet tokens, hashes, and decrypted passwords
+  may never be printed/committed/logged or returned from `/api/poll`.

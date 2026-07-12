@@ -15,9 +15,12 @@ A browser tab to the dashboard opens automatically a moment after the
 server starts.
 """
 
+import json
 import logging
 import os
 import random
+import secrets
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -25,7 +28,8 @@ import time
 import webbrowser
 from datetime import datetime
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from werkzeug.security import check_password_hash
 
 import stripchat_level_tracker as core
 
@@ -38,6 +42,51 @@ DEMO = "--demo" in sys.argv
 HOST = "127.0.0.1"
 PORT = 5057
 MAX_LOG_LINES = 500
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+USERS_DB = os.path.join(BASE_DIR, "users.db")
+SECRET_KEY_FILE = os.path.join(BASE_DIR, ".flask_secret")
+
+# --------------------------------------------------------------------------
+# Login gate -- credentials live only as salted hashes in a gitignored
+# SQLite database, users.db (set up via `python setup_users.py`, never
+# committed/printed). The session signing key is likewise a gitignored,
+# auto-generated file so restarting the dashboard doesn't invalidate every
+# open session. Neither file's contents may ever be printed/logged or
+# returned from /api/poll.
+# --------------------------------------------------------------------------
+def _load_users() -> dict:
+    if not os.path.isfile(USERS_DB):
+        raise SystemExit(
+            "No users.db found -- the dashboard has no one to log in as.\n"
+            "Run `python setup_users.py` first to create login credentials, "
+            "then start the dashboard again."
+        )
+    conn = sqlite3.connect(USERS_DB)
+    # The dashboard only needs the login hashes -- never the master password
+    # or the encrypted copies (those are for setup_users.py's viewer).
+    users = dict(conn.execute("SELECT username, hash FROM users").fetchall())
+    conn.close()
+    if not users:
+        raise SystemExit(
+            "users.db has no usable logins -- run `python setup_users.py` to "
+            "(re)create login credentials, then start the dashboard again."
+        )
+    return users
+
+
+def _load_or_create_secret_key() -> str:
+    if os.path.isfile(SECRET_KEY_FILE):
+        with open(SECRET_KEY_FILE) as f:
+            key = f.read().strip()
+        if key:
+            return key
+    key = secrets.token_hex(32)
+    with open(SECRET_KEY_FILE, "w") as f:
+        f.write(key)
+    return key
+
+
+USERS = _load_users()
 
 # --------------------------------------------------------------------------
 # i18n — English / Chinese. Sent to the page as JSON; the client's
@@ -161,6 +210,24 @@ class AppState:
 state = AppState()
 
 app = Flask(__name__)
+app.secret_key = _load_or_create_secret_key()
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+# No SESSION_COOKIE_SECURE -- this app is plain http on 127.0.0.1, never TLS.
+
+
+@app.before_request
+def _require_login():
+    """Gate every route behind a logged-in session, except the login page
+    itself and static assets. API calls get a 401 JSON response (so app.js
+    can redirect client-side); page loads get a straight redirect."""
+    if request.endpoint in ("login", "static"):
+        return None
+    if not session.get("user"):
+        if request.path.startswith("/api/"):
+            return jsonify(ok=False, error="auth"), 401
+        return redirect(url_for("login"))
+    return None
 
 
 def _append_log_entry(username: str, level: int, link: str) -> None:
@@ -195,6 +262,30 @@ def index():
         threshold=core.LEVEL_THRESHOLD,
         poll_interval=core.CHECK_INTERVAL_SECONDS,
     )
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "GET":
+        return render_template("login.html", error=False)
+
+    username = request.form.get("username", "")
+    password = request.form.get("password", "")
+    # Deliberately generic: never reveal whether the username or the
+    # password was the wrong part.
+    if username in USERS and check_password_hash(USERS[username], password):
+        session["user"] = username
+        session.permanent = True
+        return redirect(url_for("index"))
+
+    time.sleep(0.5)  # slow down brute-force guessing
+    return render_template("login.html", error=True), 401
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 
 # --------------------------------------------------------------------------

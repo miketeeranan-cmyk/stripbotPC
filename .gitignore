@@ -1,5 +1,9 @@
 # Credentials
 credentials.json
+users.db
+users.json.migrated
+users.json.old-format
+.flask_secret
 
 # Python
 __pycache__/
