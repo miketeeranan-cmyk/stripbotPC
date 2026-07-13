@@ -350,7 +350,7 @@ def api_connect():
             )
         creds = core.ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
         client = core.gspread.authorize(creds)
-        spreadsheet = client.open(core.SHEET_NAME)
+        spreadsheet = client.open_by_key(core.SHEET_ID)
         names = [ws.title for ws in spreadsheet.worksheets()]
         with state.lock:
             state.spreadsheet = spreadsheet

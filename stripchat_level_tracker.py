@@ -6,7 +6,7 @@ and logs them to a Google Sheet in real time.
 
 BEFORE RUNNING:
 1. Put your Google service account file in this folder, named credentials.json
-2. Fill in SHEET_NAME below with your actual Google Sheet name
+2. Fill in SHEET_ID below with your Google Sheet's ID (from its URL)
 3. Fill in the CSS selectors in the "SELECTORS TO FILL IN" section —
    get these by right-clicking elements on your dashboard and choosing "Inspect"
 4. Fill in your Stripchat login email/password (or log in manually when the browser opens)
@@ -29,7 +29,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 # ---------------- CONFIG ----------------
-SHEET_NAME = "stripchat tracker"
+SHEET_ID = "1Ni70MtL5rpX_jD021XWF71dbKwKYZCJub_vSoXTBCBY"
 LEVEL_THRESHOLD = 30
 CHECK_INTERVAL_SECONDS = 2
 DASHBOARD_URL = "https://stripchat.com"  # your live/dashboard page
@@ -110,7 +110,7 @@ def connect_to_sheet():
     creds_path = os.path.join(get_app_data_dir(), "credentials.json")
     creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
     client = gspread.authorize(creds)
-    spreadsheet = client.open(SHEET_NAME)
+    spreadsheet = client.open_by_key(SHEET_ID)
     sheet = choose_worksheet(spreadsheet)
     return sheet
 
