@@ -197,7 +197,14 @@ def log_user(sheet, username, level, profile_link, row_number):
     """Write directly to A:E of a specific, known row number -- no ambiguity about
     where "the table" starts, unlike append_row. The row number is tracked locally
     by the caller (see `next_row` in monitor()) instead of re-reading column A on
-    every log, which saves another Sheets API round-trip per new user found."""
+    every log, which saves another Sheets API round-trip per new user found.
+
+    If the popup scrape didn't catch a profile link (get_profile_link_via_popup
+    returned ""), guess one from the username instead of leaving the cell blank --
+    this matches the real link format exactly since it's the same domain
+    to_output_domain() rewrites captured links to."""
+    if not profile_link:
+        profile_link = f"{OUTPUT_LINK_DOMAIN}/user/{username}"
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     sheet.update(
         range_name=f"A{row_number}:E{row_number}",
