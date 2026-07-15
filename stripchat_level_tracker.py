@@ -43,7 +43,9 @@ OUTPUT_LINK_DOMAIN = "https://stripchat.com"
 USER_ROW_SELECTOR = "div.users-list li"
 # Username text inside a row
 USERNAME_SELECTOR = "span.user-levels-username-text"
-# Level number is inside an SVG <text> tag inside the badge
+# Level number is inside SVG <text> tag(s) inside the badge -- 3+ digit
+# levels can be split across multiple sibling <text>/<tspan> nodes, see
+# parse_user_row()
 LEVEL_SELECTOR = "span.user-level-badge svg text"
 # Clicking a username opens a popup card; the profile link only exists inside THAT popup,
 # never in the plain row. This selector targets the link inside the popup once it's open.
@@ -212,6 +214,39 @@ def log_user(sheet, username, level, profile_link, row_number):
     print(f"Logged: {username} (Level {level}) -> {profile_link} at row {row_number}, {timestamp}")
 
 
+def parse_user_row(row):
+    """
+    Extracts (username, level) from one viewer-list row WebElement. Shared
+    by monitor() below and dashboard.py's _run_monitor_loop() so the two
+    poll loops can't drift on this (see CLAUDE.md).
+
+    The level badge is an SVG built from one or more <text>/<tspan> nodes.
+    A 2-digit level fits in a single node, but Stripchat renders 3-digit
+    levels (100+) split across multiple sibling nodes -- the old code used
+    find_element (singular), which only ever saw the first such node, so
+    a 3-digit badge produced a partial/empty string and the whole row got
+    silently dropped. This uses find_elements (plural) and concatenates
+    every matching node's text in DOM order before extracting digits, so
+    it works whether the number is in one node or split across several.
+
+    Raises ValueError (message includes the raw badge text) if a level
+    badge element exists but no digits could be extracted from it, so
+    callers get an informative message instead of a bare int() failure.
+    Username lookup is left unwrapped -- if the row has no username
+    element at all, the underlying Selenium exception propagates
+    unchanged, same as before this change.
+    """
+    username = row.find_element(By.CSS_SELECTOR, USERNAME_SELECTOR).text.strip()
+
+    badge_nodes = row.find_elements(By.CSS_SELECTOR, LEVEL_SELECTOR)
+    raw_text = "".join(node.text for node in badge_nodes).strip()
+    digits = "".join(filter(str.isdigit, raw_text))
+    if not digits:
+        raise ValueError(f"couldn't parse a level for '{username}' from badge text {raw_text!r}")
+
+    return username, int(digits)
+
+
 def get_profile_link_via_popup(driver, row, username):
     """
     The profile link only exists inside the popup card that appears after clicking
@@ -326,10 +361,7 @@ def monitor(driver, sheet):
 
             for i, row in enumerate(rows):
                 try:
-                    username_element = row.find_element(By.CSS_SELECTOR, USERNAME_SELECTOR)
-                    username = username_element.text.strip()
-                    level_text = row.find_element(By.CSS_SELECTOR, LEVEL_SELECTOR).text.strip()
-                    level = int("".join(filter(str.isdigit, level_text)))
+                    username, level = parse_user_row(row)
 
                     print(f"[debug] row {i}: {username} | level {level}")  # DEBUG
 

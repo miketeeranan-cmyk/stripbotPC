@@ -671,16 +671,7 @@ def _run_monitor_loop(driver, sheet, stop_event: threading.Event) -> None:
                     if stop_event.is_set():
                         break
                     try:
-                        username = row.find_element(core.By.CSS_SELECTOR, core.USERNAME_SELECTOR).text.strip()
-                        level_digits = "".join(
-                            filter(
-                                str.isdigit,
-                                row.find_element(core.By.CSS_SELECTOR, core.LEVEL_SELECTOR).text.strip(),
-                            )
-                        )
-                        if not level_digits:
-                            continue
-                        level = int(level_digits)
+                        username, level = core.parse_user_row(row)
 
                         action = core.decide_action(logged_state, username, level, threshold=threshold)
 
