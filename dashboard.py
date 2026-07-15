@@ -746,7 +746,24 @@ def _run_demo_loop(stop_event: threading.Event) -> None:
 
 
 def _serve():
-    app.run(host=HOST, port=PORT, debug=False, use_reloader=False, threaded=WINDOWED)
+    try:
+        app.run(host=HOST, port=PORT, debug=False, use_reloader=False, threaded=WINDOWED)
+    except Exception:
+        # This runs in a daemon thread -- an uncaught exception here would
+        # otherwise vanish with no trace (no console in --windowed builds,
+        # and this thread is outside the try/except around window creation),
+        # leaving the app looking like a plain blank window with no clue why.
+        if WINDOWED:
+            import traceback
+
+            try:
+                with open(os.path.join(APP_DATA_DIR, "crash.log"), "a") as f:
+                    f.write(f"\n--- {datetime.now().isoformat()} (server thread) ---\n")
+                    f.write(traceback.format_exc())
+            except Exception:
+                pass
+        else:
+            raise
 
 
 def _wait_for_server(timeout=15):
