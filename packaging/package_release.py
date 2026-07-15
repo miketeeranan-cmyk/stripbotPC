@@ -28,6 +28,7 @@ DIST = os.path.join(REPO_ROOT, "dist")
 BUILDS = {
     "--core": "StripTrackerCore",
     "--launcher": "StripTracker",
+    "--core-debug": "StripTrackerCoreDebug",
 }
 
 

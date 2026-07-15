@@ -1,0 +1,70 @@
+name: Debug build
+
+# One-off diagnostic build: StripTrackerCore with a console window attached
+# (no --windowed) so print()s and unhandled exceptions show up live on the
+# operator's machine instead of going through crash.log. Never touches the
+# real release pipeline: separate tag pattern (debug-*, not v*.*.*) and
+# published as a prerelease, which GitHub's "latest release" API (what
+# launcher.py polls for auto-update) always excludes -- so no operator's
+# auto-updater ever picks this up.
+#
+# Trigger with: git tag debug-N && git push origin debug-N
+
+on:
+  push:
+    tags:
+      - "debug-*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-build.txt
+
+      - name: Fetch bundled chromedriver
+        shell: python
+        run: |
+          import os
+          import shutil
+          from webdriver_manager.chrome import ChromeDriverManager
+
+          src = ChromeDriverManager().install()
+          dest_dir = os.path.join("packaging", "bundled_driver")
+          os.makedirs(dest_dir, exist_ok=True)
+          shutil.copy(src, os.path.join(dest_dir, "chromedriver.exe"))
+
+      - name: Build + package debug console build
+        run: |
+          python packaging/build.py --core-debug
+          python packaging/package_release.py --core-debug
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-build-windows
+          path: StripTrackerCoreDebug-*.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*/*.zip
+          prerelease: true
+          generate_release_notes: true

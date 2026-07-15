@@ -83,6 +83,31 @@ def build_core():
     )
 
 
+def build_core_debug():
+    """Same as build_core(), minus --windowed -- keeps a console attached so
+    print()s and unhandled exceptions show up live. One-off diagnostic build,
+    never shipped through the normal auto-update pipeline."""
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "PyInstaller",
+            "--noconfirm",
+            "--clean",
+            "--onedir",
+            "--name",
+            "StripTrackerCoreDebug",
+            *TARGET_ARCH_FLAGS,
+            *WEBVIEW_FLAGS,
+            *SELENIUM_FLAGS,
+            *DRIVER_DATA_FLAGS,
+            f"--add-data=templates{DATA_SEP}templates",
+            f"--add-data=static{DATA_SEP}static",
+            "dashboard.py",
+        ]
+    )
+
+
 def build_launcher():
     _run(
         [
@@ -107,3 +132,5 @@ if __name__ == "__main__":
         build_core()
     if not args or "--launcher" in args:
         build_launcher()
+    if "--core-debug" in args:
+        build_core_debug()
