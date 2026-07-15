@@ -31,6 +31,7 @@ from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash
+from werkzeug.serving import WSGIRequestHandler
 
 import stripchat_level_tracker as core
 
@@ -745,9 +746,26 @@ def _run_demo_loop(stop_event: threading.Event) -> None:
     _on_monitoring_stopped()
 
 
+class _NoReverseDNSHandler(WSGIRequestHandler):
+    def address_string(self):
+        # Base implementation does a reverse-DNS lookup (getfqdn) on every
+        # request just to build the access-log line -- on a machine with
+        # slow/unreachable DNS (VPN, corporate resolver) that can stall
+        # every request indefinitely, making the whole app look hung. We
+        # never use the client hostname, so skip the lookup entirely.
+        return self.client_address[0]
+
+
 def _serve():
     try:
-        app.run(host=HOST, port=PORT, debug=False, use_reloader=False, threaded=WINDOWED)
+        app.run(
+            host=HOST,
+            port=PORT,
+            debug=False,
+            use_reloader=False,
+            threaded=WINDOWED,
+            request_handler=_NoReverseDNSHandler,
+        )
     except Exception:
         # This runs in a daemon thread -- an uncaught exception here would
         # otherwise vanish with no trace (no console in --windowed builds,
