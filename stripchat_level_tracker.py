@@ -201,6 +201,14 @@ def log_user(sheet, username, level, profile_link, row_number):
         range_name=f"A{row_number}:E{row_number}",
         values=[[username, level, timestamp, "", profile_link]],
     )
+    # Rows we write into can carry leftover font-color formatting from whatever
+    # was in that cell before (old manual styling, a previous entry, etc.) --
+    # sheet.update() above only sets values, not formatting, so without this the
+    # new entry silently inherits whatever color was already sitting there.
+    sheet.format(
+        f"A{row_number}:E{row_number}",
+        {"textFormat": {"foregroundColor": {"red": 0, "green": 0, "blue": 0}}},
+    )
     print(f"Logged: {username} (Level {level}) -> {profile_link} at row {row_number}, {timestamp}")
 
 
