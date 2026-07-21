@@ -47,6 +47,12 @@ USERNAME_SELECTOR = "span.user-levels-username-text"
 # levels can be split across multiple sibling <text>/<tspan> nodes, see
 # parse_user_row()
 LEVEL_SELECTOR = "span.user-level-badge svg text"
+# Top-tier ("legend") badges render a star with NO <text> node at all, so
+# LEVEL_SELECTOR finds nothing. They're identified by the legend gradient
+# fill on the badge's outer path. Exact level is unknowable from the DOM;
+# the star means "at the 100 tier", which is what we record.
+LEGEND_BADGE_SELECTOR = 'span.user-level-badge svg path[fill*="legend"]'
+LEGEND_BADGE_LEVEL = 100
 # Clicking a username opens a popup card; the profile link only exists inside THAT popup,
 # never in the plain row. This selector targets the link inside the popup once it's open.
 POPUP_LINK_SELECTOR = "div.user-info-popup-header a.user-levels-username-link"
@@ -236,9 +242,16 @@ def parse_user_row(row):
     every matching node's text in DOM order before extracting digits, so
     it works whether the number is in one node or split across several.
 
+    Top-tier users get a different badge style entirely: a star icon built
+    from <path> elements with no <text> node anywhere, so no digits can be
+    extracted at all. That's distinguished from a genuinely unparseable
+    badge by LEGEND_BADGE_SELECTOR (the badge's legend-gradient fill) and
+    recorded as LEGEND_BADGE_LEVEL (100), since that's the tier it denotes.
+
     Raises ValueError (message includes the raw badge text) if a level
-    badge element exists but no digits could be extracted from it, so
-    callers get an informative message instead of a bare int() failure.
+    badge element exists but no digits could be extracted from it and it
+    isn't a legend/star badge either, so callers get an informative message
+    instead of a bare int() failure.
     Username lookup is left unwrapped -- if the row has no username
     element at all, the underlying Selenium exception propagates
     unchanged, same as before this change.
@@ -249,6 +262,8 @@ def parse_user_row(row):
     raw_text = "".join(node.text for node in badge_nodes).strip()
     digits = "".join(filter(str.isdigit, raw_text))
     if not digits:
+        if row.find_elements(By.CSS_SELECTOR, LEGEND_BADGE_SELECTOR):
+            return username, LEGEND_BADGE_LEVEL
         raise ValueError(f"couldn't parse a level for '{username}' from badge text {raw_text!r}")
 
     return username, int(digits)

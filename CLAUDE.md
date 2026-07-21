@@ -30,8 +30,11 @@ python packaging/build.py      # build the desktop app + launcher (PyInstaller)
 ## Gotchas
 
 - **Selectors** (`USER_ROW_SELECTOR`, `USERNAME_SELECTOR`, `LEVEL_SELECTOR`,
-  `POPUP_LINK_SELECTOR`, top of `stripchat_level_tracker.py`) are brittle by
-  design — check first if tracking stops finding users.
+  `LEGEND_BADGE_SELECTOR`, `POPUP_LINK_SELECTOR`, top of
+  `stripchat_level_tracker.py`) are brittle by design — check first if
+  tracking stops finding users. Top-tier viewers get a star badge with no
+  `<text>` node at all (matched via `LEGEND_BADGE_SELECTOR` instead) and are
+  logged at level 100 since the exact level isn't in the DOM.
 - **Quit** calls `os._exit(0)` — no graceful reload; relaunch by rerunning
   `python dashboard.py`.
 - **Secrets**: `credentials.json`, `users.db`, `.flask_secret` are gitignored.
