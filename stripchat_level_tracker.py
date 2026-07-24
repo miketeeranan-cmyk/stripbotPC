@@ -123,6 +123,44 @@ def connect_to_sheet():
     return sheet
 
 
+def dedupe_sheet_rows(sheet):
+    """
+    Removes pre-existing duplicate rows for the same username before state is
+    built. Without this, a username with 2+ rows only keeps its last
+    occurrence in load_sheet_state()'s dict -- earlier duplicates (from a
+    manual paste, or two writers racing) become permanently invisible to the
+    app rather than actually going away.
+
+    For each duplicated username, keeps the row with the highest level (ties
+    broken by keeping the lower/later row) and deletes the rest, highest row
+    number first so earlier deletions don't shift the row numbers of ones
+    still pending.
+    """
+    all_values = sheet.get_all_values()
+    occurrences = {}
+    for row_number, row_values in enumerate(all_values, start=1):
+        if not row_values or not row_values[0]:
+            continue
+        username = row_values[0]
+        level_text = row_values[1] if len(row_values) > 1 else ""
+        try:
+            level = int("".join(filter(str.isdigit, level_text)))
+        except ValueError:
+            level = 0
+        occurrences.setdefault(username, []).append((row_number, level))
+
+    rows_to_delete = []
+    for entries in occurrences.values():
+        if len(entries) <= 1:
+            continue
+        entries.sort(key=lambda entry: (entry[1], entry[0]))
+        keeper_row = entries[-1][0]
+        rows_to_delete.extend(row for row, _ in entries if row != keeper_row)
+
+    for row_number in sorted(rows_to_delete, reverse=True):
+        sheet.delete_rows(row_number)
+
+
 def load_sheet_state(sheet):
     """
     Read the whole sheet exactly once at startup and cache it in memory as a
@@ -133,7 +171,12 @@ def load_sheet_state(sheet):
     user for that cycle. The per-user level is what lets later cycles tell a
     relog at a genuinely higher level apart from a repeat at the same/lower one
     (see decide_action).
+
+    Calls dedupe_sheet_rows() first so pre-existing duplicate rows (from a
+    manual edit or two writers racing) get cleaned up before state is built,
+    rather than silently losing track of all but the last occurrence.
     """
+    dedupe_sheet_rows(sheet)
     all_values = sheet.get_all_values()
     state = {}
     for row_number, row_values in enumerate(all_values, start=1):
