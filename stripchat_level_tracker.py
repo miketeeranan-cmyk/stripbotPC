@@ -123,7 +123,7 @@ def connect_to_sheet():
     return sheet
 
 
-def dedupe_sheet_rows(sheet):
+def dedupe_sheet_rows(spreadsheet):
     """
     Removes duplicate rows for the same username across every tab in the
     spreadsheet, not just the one about to be monitored -- a duplicate in
@@ -137,14 +137,18 @@ def dedupe_sheet_rows(sheet):
     earlier deletions in that tab don't shift the row numbers of ones still
     pending).
 
-    Only cleans up rows that already exist at Start time. It does NOT stop
-    a user who's already logged in another tab from being logged again in
-    the tab actually being monitored during this session, since live
+    Takes the whole spreadsheet (not a specific worksheet) so it can run as
+    soon as dashboard.py connects -- before a tab is even picked, let alone
+    Start pressed -- as well as from load_sheet_state() at monitor start.
+
+    Only cleans up rows that already exist at the moment it runs. It does
+    NOT stop a user who's already logged in another tab from being logged
+    again in the tab actually being monitored during a session, since live
     new/update decisions (decide_action) only ever check the currently
     monitored tab's state.
     """
     occurrences = {}  # username -> [(tab_index, worksheet, row_number, level), ...]
-    for tab_index, worksheet in enumerate(sheet.spreadsheet.worksheets()):
+    for tab_index, worksheet in enumerate(spreadsheet.worksheets()):
         all_values = worksheet.get_all_values()
         for row_number, row_values in enumerate(all_values, start=1):
             if not row_values or not row_values[0]:
@@ -189,9 +193,13 @@ def load_sheet_state(sheet):
 
     Calls dedupe_sheet_rows() first so pre-existing duplicate rows (from a
     manual edit or two writers racing) get cleaned up before state is built,
-    rather than silently losing track of all but the last occurrence.
+    rather than silently losing track of all but the last occurrence. This
+    is a second, belt-and-suspenders pass -- dashboard.py already runs the
+    same cleanup once at connect time, before a tab is even picked -- so it
+    also covers switching tabs mid-session and the plain CLI, which has no
+    separate "connect" step.
     """
-    dedupe_sheet_rows(sheet)
+    dedupe_sheet_rows(sheet.spreadsheet)
     all_values = sheet.get_all_values()
     state = {}
     for row_number, row_values in enumerate(all_values, start=1):

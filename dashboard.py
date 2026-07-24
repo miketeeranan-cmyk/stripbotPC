@@ -352,6 +352,11 @@ def api_connect():
         creds = core.ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
         client = core.gspread.authorize(creds)
         spreadsheet = client.open_by_key(core.SHEET_ID)
+        # Clean up any duplicate rows across every tab as soon as we connect --
+        # before the operator has even picked a tab, let alone pressed Start.
+        # load_sheet_state() also runs this at monitor start (covers tab
+        # switches and the plain CLI), so this is a second, earlier pass.
+        core.dedupe_sheet_rows(spreadsheet)
         names = [ws.title for ws in spreadsheet.worksheets()]
         with state.lock:
             state.spreadsheet = spreadsheet
