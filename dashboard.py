@@ -664,7 +664,7 @@ def _on_monitoring_stopped():
 
 def _run_monitor_loop(driver, sheet, stop_event: threading.Event) -> None:
     try:
-        logged_state, next_row = core.load_sheet_state(sheet)
+        logged_state, next_row, other_tab_usernames = core.load_sheet_state(sheet)
         pending_link_fixups = {}
         while not stop_event.is_set():
             # Re-read each cycle so a threshold change from the Threshold
@@ -678,7 +678,13 @@ def _run_monitor_loop(driver, sheet, stop_event: threading.Event) -> None:
                     try:
                         username, level = core.parse_user_row(row)
 
-                        action = core.decide_action(logged_state, username, level, threshold=threshold)
+                        action = core.decide_action(
+                            logged_state,
+                            username,
+                            level,
+                            threshold=threshold,
+                            other_tab_usernames=other_tab_usernames,
+                        )
 
                         if action == "new":
                             profile_link = core.get_profile_link_via_popup(driver, row, username)

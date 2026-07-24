@@ -37,6 +37,10 @@ SITE_BASE_URL = "https://stripchat.com"  # used to build full profile links from
 # Domain to write into the sheet's link column -- lets you keep browsing on .ooo
 # while the saved links always use .com (or whatever domain you set here).
 OUTPUT_LINK_DOMAIN = "https://stripchat.com"
+# Viewers get manually moved here from every room tab once "finished" --
+# this tab is authoritative and must never lose a row to a room tab's
+# duplicate, regardless of level. See dedupe_sheet_rows().
+MASTER_TAB_NAME = "Summary"
 
 # ---------------- SELECTORS (filled in from your dashboard's HTML) ----------------
 # Each user row in the viewer list
@@ -132,20 +136,24 @@ def dedupe_sheet_rows(spreadsheet):
     dict -- earlier duplicates (from a manual paste, or two writers racing)
     become permanently invisible to the app rather than actually going away.
 
-    Keeps the single highest-level occurrence per username, wherever it
-    lives, and deletes the rest (highest row number first, per tab, so
-    earlier deletions in that tab don't shift the row numbers of ones still
-    pending).
+    Keeps a single occurrence per username and deletes the rest (highest row
+    number first, per tab, so earlier deletions in that tab don't shift the
+    row numbers of ones still pending). If any of the duplicates are in
+    MASTER_TAB_NAME, that tab always wins -- viewers get manually moved there
+    once "finished", so it must never lose a row to a room tab's duplicate,
+    even one with a higher level (ties among multiple MASTER_TAB_NAME rows
+    for the same user are broken by level, same as the no-master case).
+    Otherwise, the highest-level occurrence wins, wherever it lives.
 
     Takes the whole spreadsheet (not a specific worksheet) so it can run as
     soon as dashboard.py connects -- before a tab is even picked, let alone
     Start pressed -- as well as from load_sheet_state() at monitor start.
 
-    Only cleans up rows that already exist at the moment it runs. It does
-    NOT stop a user who's already logged in another tab from being logged
-    again in the tab actually being monitored during a session, since live
-    new/update decisions (decide_action) only ever check the currently
-    monitored tab's state.
+    Returns {username: tab_title} for every username left in the spreadsheet
+    after cleanup -- one entry per username, naming whichever tab now owns
+    it. load_sheet_state() uses this to tell decide_action() which usernames
+    already live in a DIFFERENT tab, so a live sighting of someone already
+    tracked elsewhere doesn't get logged again in the tab being monitored.
     """
     occurrences = {}  # username -> [(tab_index, worksheet, row_number, level), ...]
     for tab_index, worksheet in enumerate(spreadsheet.worksheets()):
@@ -163,21 +171,28 @@ def dedupe_sheet_rows(spreadsheet):
                 (tab_index, worksheet, row_number, level)
             )
 
+    owner_tab = {}
     rows_to_delete_by_sheet = {}  # id(worksheet) -> (worksheet, [row_number, ...])
-    for entries in occurrences.values():
+    for username, entries in occurrences.items():
         if len(entries) <= 1:
+            owner_tab[username] = entries[0][1].title
             continue
-        entries.sort(key=lambda entry: (entry[3], entry[0], entry[2]))
-        keeper_index = len(entries) - 1
-        for i, (_, worksheet, row_number, _) in enumerate(entries):
-            if i == keeper_index:
+        master_entries = [entry for entry in entries if entry[1].title == MASTER_TAB_NAME]
+        candidates = master_entries if master_entries else entries
+        keeper = sorted(candidates, key=lambda entry: (entry[3], entry[0], entry[2]))[-1]
+        owner_tab[username] = keeper[1].title
+        for entry in entries:
+            if entry is keeper:
                 continue
+            _, worksheet, row_number, _ = entry
             bucket = rows_to_delete_by_sheet.setdefault(id(worksheet), (worksheet, []))
             bucket[1].append(row_number)
 
     for worksheet, row_numbers in rows_to_delete_by_sheet.values():
         for row_number in sorted(row_numbers, reverse=True):
             worksheet.delete_rows(row_number)
+
+    return owner_tab
 
 
 def load_sheet_state(sheet):
@@ -198,8 +213,16 @@ def load_sheet_state(sheet):
     same cleanup once at connect time, before a tab is even picked -- so it
     also covers switching tabs mid-session and the plain CLI, which has no
     separate "connect" step.
+
+    Also returns other_tab_usernames: every username the just-completed
+    dedupe found living in a DIFFERENT tab than this one. Callers pass this
+    into decide_action() so a viewer already tracked elsewhere in the
+    spreadsheet doesn't get logged again here too.
     """
-    dedupe_sheet_rows(sheet.spreadsheet)
+    owner_tab = dedupe_sheet_rows(sheet.spreadsheet)
+    other_tab_usernames = {
+        username for username, tab in owner_tab.items() if tab != sheet.title
+    }
     all_values = sheet.get_all_values()
     state = {}
     for row_number, row_values in enumerate(all_values, start=1):
@@ -212,10 +235,10 @@ def load_sheet_state(sheet):
         except ValueError:
             level = 0
         state[username] = {"level": level, "row": row_number}
-    return state, len(all_values) + 1
+    return state, len(all_values) + 1, other_tab_usernames
 
 
-def decide_action(state, username, level, threshold=LEVEL_THRESHOLD):
+def decide_action(state, username, level, threshold=LEVEL_THRESHOLD, other_tab_usernames=frozenset()):
     """
     Stripchat lets you self-adjust your level once you're over 99, so the same
     person can reappear at a different number without it meaning a new user.
@@ -223,7 +246,14 @@ def decide_action(state, username, level, threshold=LEVEL_THRESHOLD):
     already logged but have climbed to a strictly higher level since, or
     "skip" for a repeat at the same or a lower level (per-request: never
     overwrite a higher logged level with a lower/equal one).
+
+    Also "skip" if the username is already tracked in a DIFFERENT tab (per
+    other_tab_usernames, from load_sheet_state()) -- per-request, a viewer
+    already logged somewhere else in the spreadsheet shouldn't get a second
+    row here too, no matter their level.
     """
+    if username in other_tab_usernames:
+        return "skip"
     prev = state.get(username)
     if prev is None:
         return "new" if level >= threshold else "skip"
@@ -438,7 +468,7 @@ def monitor(driver, sheet):
 
     # Cache the sheet once instead of hitting the Sheets API on every qualifying row of
     # every cycle -- see load_sheet_state() for why.
-    logged_state, next_row = load_sheet_state(sheet)
+    logged_state, next_row, other_tab_usernames = load_sheet_state(sheet)
 
     print(f"Monitoring for users level {LEVEL_THRESHOLD}+... (Ctrl+C to stop)")
 
@@ -453,7 +483,9 @@ def monitor(driver, sheet):
 
                     print(f"[debug] row {i}: {username} | level {level}")  # DEBUG
 
-                    action = decide_action(logged_state, username, level)
+                    action = decide_action(
+                        logged_state, username, level, other_tab_usernames=other_tab_usernames
+                    )
                     if action != "skip":
                         # Only click into the popup for users we're actually about to log —
                         # clicking every single row every cycle would be slow and disruptive.
