@@ -125,40 +125,55 @@ def connect_to_sheet():
 
 def dedupe_sheet_rows(sheet):
     """
-    Removes pre-existing duplicate rows for the same username before state is
-    built. Without this, a username with 2+ rows only keeps its last
-    occurrence in load_sheet_state()'s dict -- earlier duplicates (from a
-    manual paste, or two writers racing) become permanently invisible to the
-    app rather than actually going away.
+    Removes duplicate rows for the same username across every tab in the
+    spreadsheet, not just the one about to be monitored -- a duplicate in
+    China24 and USA24 is still a duplicate. Without this, a username with
+    2+ rows only keeps its last-seen occurrence in load_sheet_state()'s
+    dict -- earlier duplicates (from a manual paste, or two writers racing)
+    become permanently invisible to the app rather than actually going away.
 
-    For each duplicated username, keeps the row with the highest level (ties
-    broken by keeping the lower/later row) and deletes the rest, highest row
-    number first so earlier deletions don't shift the row numbers of ones
-    still pending.
+    Keeps the single highest-level occurrence per username, wherever it
+    lives, and deletes the rest (highest row number first, per tab, so
+    earlier deletions in that tab don't shift the row numbers of ones still
+    pending).
+
+    Only cleans up rows that already exist at Start time. It does NOT stop
+    a user who's already logged in another tab from being logged again in
+    the tab actually being monitored during this session, since live
+    new/update decisions (decide_action) only ever check the currently
+    monitored tab's state.
     """
-    all_values = sheet.get_all_values()
-    occurrences = {}
-    for row_number, row_values in enumerate(all_values, start=1):
-        if not row_values or not row_values[0]:
-            continue
-        username = row_values[0]
-        level_text = row_values[1] if len(row_values) > 1 else ""
-        try:
-            level = int("".join(filter(str.isdigit, level_text)))
-        except ValueError:
-            level = 0
-        occurrences.setdefault(username, []).append((row_number, level))
+    occurrences = {}  # username -> [(tab_index, worksheet, row_number, level), ...]
+    for tab_index, worksheet in enumerate(sheet.spreadsheet.worksheets()):
+        all_values = worksheet.get_all_values()
+        for row_number, row_values in enumerate(all_values, start=1):
+            if not row_values or not row_values[0]:
+                continue
+            username = row_values[0]
+            level_text = row_values[1] if len(row_values) > 1 else ""
+            try:
+                level = int("".join(filter(str.isdigit, level_text)))
+            except ValueError:
+                level = 0
+            occurrences.setdefault(username, []).append(
+                (tab_index, worksheet, row_number, level)
+            )
 
-    rows_to_delete = []
+    rows_to_delete_by_sheet = {}  # id(worksheet) -> (worksheet, [row_number, ...])
     for entries in occurrences.values():
         if len(entries) <= 1:
             continue
-        entries.sort(key=lambda entry: (entry[1], entry[0]))
-        keeper_row = entries[-1][0]
-        rows_to_delete.extend(row for row, _ in entries if row != keeper_row)
+        entries.sort(key=lambda entry: (entry[3], entry[0], entry[2]))
+        keeper_index = len(entries) - 1
+        for i, (_, worksheet, row_number, _) in enumerate(entries):
+            if i == keeper_index:
+                continue
+            bucket = rows_to_delete_by_sheet.setdefault(id(worksheet), (worksheet, []))
+            bucket[1].append(row_number)
 
-    for row_number in sorted(rows_to_delete, reverse=True):
-        sheet.delete_rows(row_number)
+    for worksheet, row_numbers in rows_to_delete_by_sheet.values():
+        for row_number in sorted(row_numbers, reverse=True):
+            worksheet.delete_rows(row_number)
 
 
 def load_sheet_state(sheet):
